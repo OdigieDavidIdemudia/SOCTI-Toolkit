@@ -10,6 +10,7 @@ import comparator
 import json
 import csv
 import os
+import pandas as pd
 import ctypes
 
 class SeparatorGUI:
@@ -780,171 +781,403 @@ class SeparatorGUI:
         ttk.Button(b_container, text="Compare", command=self.compare_inputs, style='Orange.TButton').pack(side='left', padx=20) 
         ttk.Button(b_container, text="Reset", command=self.reset_comparator, style='Secondary.TButton').pack(side='left', padx=5)
         
-        # Results Tabs
-        self.res_notebook = ttk.Notebook(parent)
-        self.res_notebook.pack(fill='both', expand=True, padx=10, pady=(0, 5)) 
+        # FIX: Layout Ordering - Pack bottom elements first to ensure they are visible
         
-        self.tab_common, self.tree_common = self.create_result_tree(self.res_notebook, "Common")
-        self.tab_unique_a, self.tree_unique_a = self.create_result_tree(self.res_notebook, "Unique to A")
-        self.tab_unique_b, self.tree_unique_b = self.create_result_tree(self.res_notebook, "Unique to B")
-        
-        # Result Actions Footer
+        # Result Actions Footer (Pack Bottom)
         res_actions = ttk.Frame(parent, padding=10)
-        res_actions.pack(fill='x', padx=10, pady=(0, 20))
+        res_actions.pack(side='bottom', fill='x', padx=10, pady=(0, 20))
         
         ttk.Button(res_actions, text="Copy All", command=self.copy_all_result, style='Secondary.TButton').pack(side='left', padx=5)
         ttk.Button(res_actions, text="Export CSV", command=self.export_csv, style='Secondary.TButton').pack(side='left', padx=5)
         ttk.Button(res_actions, text="Export JSON", command=self.export_json, style='Secondary.TButton').pack(side='left', padx=5)
 
+        # Optimization Options (Pack Bottom, above Footer)
+        opt_frame = ttk.Frame(parent, padding=10)
+        opt_frame.pack(side='bottom', fill='x')
+        
+        self.var_mark_onboarded = tk.BooleanVar(value=False)
+        # Bind the checkbox to update the view immediately if data exists
+        ttk.Checkbutton(opt_frame, text="Mark Onboarded Status (Checks if present in both)", variable=self.var_mark_onboarded, command=self.refresh_view).pack(side='left', padx=10)
+
+        # Results Tabs (Pack Remaining Space)
+        self.res_notebook = ttk.Notebook(parent)
+        self.res_notebook.pack(side='top', fill='both', expand=True, padx=10, pady=(0, 5)) 
+        
+        self.tab_common, self.tree_common = self.create_result_tree(self.res_notebook, "Common")
+        self.tab_combined, self.tree_combined = self.create_result_tree(self.res_notebook, "Combined")
+        self.tab_unique_a, self.tree_unique_a = self.create_result_tree(self.res_notebook, "Unique to A")
+        self.tab_unique_b, self.tree_unique_b = self.create_result_tree(self.res_notebook, "Unique to B")
+
     def create_result_tree(self, parent_notebook, title):
         frame = ttk.Frame(parent_notebook)
+        frame.pack(fill='both', expand=True)
+        
         parent_notebook.add(frame, text=title)
         
-        tree = ttk.Treeview(frame, columns=('val'), show='headings')
-        tree.heading('val', text='Item Value')
-        tree.column('val', anchor='w')
+        tree = ttk.Treeview(frame, show='headings')
         
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
         
         tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+        
+        # Initialize with correct columns based on default state
+        mode = "detailed" if self.var_mark_onboarded.get() else "simple"
+        self.configure_tree_columns(tree, mode)
+        
         return frame, tree
 
-    # --- Logic Adapters ---
-    
     def upload_file(self, target_widget):
-        file_path = filedialog.askopenfilename(filetypes=[("Text/CSV files", "*.txt *.csv"), ("All files", "*.*")])
-        if file_path:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+        file_path = filedialog.askopenfilename(filetypes=[("All Supported", "*.txt *.csv *.xlsx *.xls"), ("Excel Files", "*.xlsx *.xls"), ("Text/CSV", "*.txt *.csv")])
+        if not file_path:
+            return
+            
+        try:
+            content = ""
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                # Excel Handler - Spec says: required_columns: ["hostname", "ip_or_hash"]
+                df = pd.read_excel(file_path)
+                # Normalize headers: lower, strip
+                df.columns = [str(c).lower().strip().replace(' ', '_') for c in df.columns]
+
+                # Map aliases to standard 'ip_or_hash' key
+                rename_map = {}
+                if 'ip_or_hash' not in df.columns:
+                    if 'ipaddress' in df.columns:
+                        rename_map['ipaddress'] = 'ip_or_hash'
+                    elif 'hash' in df.columns:
+                        rename_map['hash'] = 'ip_or_hash'
+                    elif 'ip' in df.columns: # Helpful extra alias
+                        rename_map['ip'] = 'ip_or_hash'
+                
+                if rename_map:
+                    df.rename(columns=rename_map, inplace=True)
+                
+                required = ['hostname', 'ip_or_hash']
+                # Check for required columns
+                missing = [c for c in required if c not in df.columns]
+                
+                if missing:
+                    # Fallback or Error? 
+                    # Spec: "required_columns": ["hostname", "ip_or_hash"] (or aliases now)
+                    messagebox.showwarning("Column Mismatch", f"Excel file missing columns: {missing}.\nExpected: hostname, ip_or_hash (or ipaddress, hash)")
+                    return
+
+                # Convert to text representation for the widget?
+                # The widget is a Text widget (ScrolledText). We should populate it with a representation 
+                # OR change the state logic to hold the DF separatedly.
+                # Current Architecture relies on 'input_a' text widget content. 
+                # We can serialize it as JSON or CSV in the text widget?
+                # Or just Format: "hostname | ip_or_hash" per line?
+                
+                lines = []
+                for _, row in df.iterrows():
+                    h = str(row.get('hostname', '')).strip()
+                    i = str(row.get('ip_or_hash', '')).strip()
+                    if i:
+                        lines.append(f"{h} | {i}")
+                
+                content = "\n".join(lines)
+                
+            else:
+                # Text/CSV
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-                    target_widget.insert(tk.END, content + "\n")
-                self.update_counts()
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load file: {e}")
+            
+            target_widget.delete("1.0", tk.END)
+            target_widget.insert("1.0", content)
+            self.update_counts() # Trigger count update
+            
+        except Exception as e:
+            messagebox.showerror("Upload Error", f"Failed to load file: {e}")
 
-    def update_counts(self):
-        txt_a = self.input_a.get("1.0", tk.END).strip()
-        cnt_a = len(self.norm_engine.normalize(txt_a))
-        self.count_a_var.set(f"({cnt_a} items)")
+    def parse_input(self, text_content):
+        # Helper to parse text widget content into key-value pairs (hostname, ip)
+        # Supports: 
+        # 1. "hostname | ip" (from our excel import)
+        # 2. "ip" (raw list)
+        # 3. "hostname, ip" etc
         
-        txt_b = self.input_b.get("1.0", tk.END).strip()
-        cnt_b = len(self.norm_engine.normalize(txt_b))
-        self.count_b_var.set(f"({cnt_b} items)")
-
-    def update_tab_counts(self, c_count, a_count, b_count):
-        self.res_notebook.tab(self.tab_common, text=f"Common ({c_count})")
-        self.res_notebook.tab(self.tab_unique_a, text=f"Unique to A ({a_count})")
-        self.res_notebook.tab(self.tab_unique_b, text=f"Unique to B ({b_count})")
+        lines = text_content.split('\n')
+        parsed = []
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            hostname = ""
+            ip_val = ""
+            
+            # Pipe split (our excel format)
+            if '|' in line:
+                parts = line.split('|')
+                if len(parts) >= 2:
+                    hostname = parts[0].strip()
+                    ip_val = parts[1].strip()
+                else:
+                    ip_val = line.strip()
+            else:
+                # Fallback: assume whole line is IP/Hash if no obvious delimiter
+                # Or use regex to detect? 
+                # For v2.0 simple fallback:
+                ip_val = line
+            
+            if ip_val:
+                parsed.append({'hostname': hostname, 'ip_or_hash': ip_val})
+        return parsed
 
     def normalize_inputs(self):
-        print("AUDIT: normalize_clicked")
-        raw_a = self.input_a.get("1.0", tk.END).strip()
-        raw_b = self.input_b.get("1.0", tk.END).strip()
-        
-        self.normalized_cache_a = self.norm_engine.normalize(raw_a)
-        self.normalized_cache_b = self.norm_engine.normalize(raw_b)
-        
+        # Parse and re-format inputs to standard "Hostname | IP" format
+        raw_a = self.input_a.get("1.0", tk.END)
+        parsed_a = self.parse_input(raw_a)
+        lines_a = [f"{p['hostname']} | {p['ip_or_hash']}" if p['hostname'] else p['ip_or_hash'] for p in parsed_a]
         self.input_a.delete("1.0", tk.END)
-        self.input_a.insert("1.0", "\n".join(self.normalized_cache_a))
-        self.input_b.delete("1.0", tk.END)
-        self.input_b.insert("1.0", "\n".join(self.normalized_cache_b))
+        self.input_a.insert("1.0", "\n".join(lines_a))
         
-        self.comp_state = "normalized"
+        raw_b = self.input_b.get("1.0", tk.END)
+        parsed_b = self.parse_input(raw_b)
+        lines_b = [f"{p['hostname']} | {p['ip_or_hash']}" if p['hostname'] else p['ip_or_hash'] for p in parsed_b]
+        self.input_b.delete("1.0", tk.END)
+        self.input_b.insert("1.0", "\n".join(lines_b))
+        
         self.update_counts()
 
     def compare_inputs(self):
-        print("AUDIT: compare_clicked")
+        # Get raw text
+        raw_a = self.input_a.get("1.0", tk.END)
+        raw_b = self.input_b.get("1.0", tk.END)
         
-        # Always normalize fresh from current input to ensure WYSIWYG
-        # This replaces the check for "comp_state" and explicit normalization requirement
-        raw_a = self.input_a.get("1.0", tk.END).strip()
-        raw_b = self.input_b.get("1.0", tk.END).strip()
+        # Parse into structured data
+        list_a = self.parse_input(raw_a)
+        list_b = self.parse_input(raw_b)
         
-        list_a = self.norm_engine.normalize(raw_a)
-        list_b = self.norm_engine.normalize(raw_b)
-             
-        res = self.comp_engine.compare(list_a, list_b)
+        check_onboarded = self.var_mark_onboarded.get()
         
+        # logic
+        res = self.comp_engine.compare(list_a, list_b, check_onboarded=check_onboarded)
+        # Combine all for the combined view
+        res['combined'] = res['common'] + res['unique_to_a'] + res['unique_to_b']
+        # Sort combined view to make it cohesive
+        res['combined'].sort(key=lambda x: (x.get('hostname', '').lower(), x.get('ip_or_hash', '')))
+        self.last_results = res # Cache for export
+        
+        # Populate Trees
         self.populate_tree(self.tree_common, res['common'])
+        self.populate_tree(self.tree_combined, res['combined'])
         self.populate_tree(self.tree_unique_a, res['unique_to_a'])
         self.populate_tree(self.tree_unique_b, res['unique_to_b'])
         
-        self.update_tab_counts(len(res['common']), len(res['unique_to_a']), len(res['unique_to_b']))
+        # Update tab titles with counts
+        self.res_notebook.tab(self.tab_common, text=f"Common ({len(res['common'])})")
+        self.res_notebook.tab(self.tab_combined, text=f"Combined ({len(res['combined'])})")
+        self.res_notebook.tab(self.tab_unique_a, text=f"Unique to A ({len(res['unique_to_a'])})")
+        self.res_notebook.tab(self.tab_unique_b, text=f"Unique to B ({len(res['unique_to_b'])})")
 
-    def populate_tree(self, tree, data):
-        for item in tree.get_children():
-            tree.delete(item)
-        for item in data:
-            tree.insert('', tk.END, values=(item,))
+    def refresh_view(self):
+        # Always update columns to reflect mode change immediately, even if empty
+        mode = "detailed" if self.var_mark_onboarded.get() else "simple"
+        self.configure_tree_columns(self.tree_common, mode)
+        self.configure_tree_columns(self.tree_combined, mode)
+        self.configure_tree_columns(self.tree_unique_a, mode)
+        self.configure_tree_columns(self.tree_unique_b, mode)
+
+        # Triger re-compare if data exists to populate rows with correct fields
+        if self.input_a.get("1.0", tk.END).strip() or self.input_b.get("1.0", tk.END).strip():
+             self.compare_inputs()
+
+    def configure_tree_columns(self, tree, mode="detailed"):
+        if mode == "detailed":
+            cols = ('hostname', 'ip_or_hash', 'onboarded')
+            tree.configure(columns=cols, show='headings')
+            tree.heading('hostname', text='Hostname')
+            tree.heading('ip_or_hash', text='IP / Hash')
+            tree.heading('onboarded', text='Onboarded?')
+            tree.column('hostname', width=150, stretch=True)
+            tree.column('ip_or_hash', width=150, stretch=True)
+            tree.column('onboarded', width=80, stretch=True)
+        else:
+            cols = ('val',)
+            tree.configure(columns=cols, show='headings')
+            tree.heading('val', text='Item Value')
+            tree.column('val', width=400, stretch=True)
+
+    def populate_tree(self, tree, data_list):
+        tree.delete(*tree.get_children())
+        
+        mode = "detailed" if self.var_mark_onboarded.get() else "simple"
+        
+        # detailed cols: ('hostname', 'ip_or_hash', 'onboarded')
+        # simple cols: ('val',)
+        target_cols = ('hostname', 'ip_or_hash', 'onboarded') if mode == "detailed" else ('val',)
+        
+        # Only re-configure if columns differ (avoids resizing glitches on re-click)
+        if str(tree['columns']) != str(target_cols):
+             self.configure_tree_columns(tree, mode)
+        
+        for item in data_list:
+            if mode == "detailed":
+                tree.insert('', 'end', values=(
+                    item.get('hostname', ''),
+                    item.get('ip_or_hash', ''),
+                    item.get('onboarded', '-')
+                ))
+            else:
+                # Simple/Old view
+                val = item.get('ip_or_hash', '')
+                h = item.get('hostname', '')
+                if h and h != val: # Only show host if different and present
+                    val = f"{h} | {val}"
+                tree.insert('', 'end', values=(val,))
+
+    def update_counts(self):
+        # Update labels with simple line counts for now
+        # Ideally should parse, but that might be heavy on every keypress
+        lines_a = len(self.input_a.get("1.0", tk.END).strip().split('\n'))
+        lines_b = len(self.input_b.get("1.0", tk.END).strip().split('\n'))
+        # Adjust for empty
+        if not self.input_a.get("1.0", tk.END).strip(): lines_a = 0
+        if not self.input_b.get("1.0", tk.END).strip(): lines_b = 0
+        
+        self.count_a_var.set(f"({lines_a} lines)")
+        self.count_b_var.set(f"({lines_b} lines)")
 
     def reset_comparator(self):
-        print("AUDIT: reset_clicked")
         self.input_a.delete("1.0", tk.END)
         self.input_b.delete("1.0", tk.END)
-        self.populate_tree(self.tree_common, [])
-        self.populate_tree(self.tree_unique_a, [])
-        self.populate_tree(self.tree_unique_b, [])
-        self.comp_state = "raw"
         self.update_counts()
-        self.update_tab_counts(0, 0, 0)
-        
+        self.tree_common.delete(*self.tree_common.get_children())
+        self.tree_combined.delete(*self.tree_combined.get_children())
+        self.tree_unique_a.delete(*self.tree_unique_a.get_children())
+        self.tree_unique_b.delete(*self.tree_unique_b.get_children())
+        self.res_notebook.tab(self.tab_common, text="Common")
+        self.res_notebook.tab(self.tab_combined, text="Combined")
+        self.res_notebook.tab(self.tab_unique_a, text="Unique to A")
+        self.res_notebook.tab(self.tab_unique_b, text="Unique to B")
+
     def get_current_tree(self):
         current_tab_index = self.res_notebook.index(self.res_notebook.select())
         if current_tab_index == 0: return self.tree_common, "common"
-        if current_tab_index == 1: return self.tree_unique_a, "unique_a"
-        if current_tab_index == 2: return self.tree_unique_b, "unique_b"
+        if current_tab_index == 1: return self.tree_combined, "combined"
+        if current_tab_index == 2: return self.tree_unique_a, "unique_a"
+        if current_tab_index == 3: return self.tree_unique_b, "unique_b"
         return None, None
 
     def copy_all_result(self):
-        tree, _ = self.get_current_tree()
-        if not tree: return
-        
-        items = tree.get_children()
-        if not items:
-            messagebox.showinfo("Info", "No items to copy.")
+        if not hasattr(self, 'last_results'): 
+            messagebox.showinfo("Info", "No results to copy.")
             return
-            
-        values = [tree.item(item)['values'][0] for item in items]
-        self.root.clipboard_clear()
-        self.root.clipboard_append("\n".join(values))
-        messagebox.showinfo("Info", f"Copied {len(values)} items.")
+
+        lines = []
+        for group, title in [("combined", "Combined"), ("common", "Common"), ("unique_to_a", "Unique to A"), ("unique_to_b", "Unique to B")]:
+            items = self.last_results.get(group, [])
+            if items:
+                lines.append(f"--- {title} ---")
+                for item in items:
+                    h = item.get('hostname', '')
+                    i = item.get('ip_or_hash', '')
+                    o = item.get('onboarded', '-')
+                    lines.append(f"{h} | {i} | Onboarded: {o}")
+                lines.append("")
+        
+        full_text = "\n".join(lines)
+        if full_text:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(full_text)
+            messagebox.showinfo("Success", "All results copied to clipboard.")
+        else:
+            messagebox.showinfo("Info", "No results found.")
 
     def export_csv(self):
-        tree, name = self.get_current_tree()
-        if not tree: return
-        file_path = filedialog.asksaveasfilename(defaultextension=".csv", initialfile=f"{name}_results.csv")
-        if file_path:
-            items = [tree.item(child)['values'][0] for child in tree.get_children()]
-            try:
-                with open(file_path, 'w', newline='', encoding='utf-8') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(['Value'])
-                    for item in items:
-                        writer.writerow([item])
-                messagebox.showinfo("Success", "Export successful.")
-            except Exception as e:
-                messagebox.showerror("Error", f"Export failed: {e}")
+        if not hasattr(self, 'last_results'): return
+        file_path = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV", "*.csv")])
+        if not file_path: return
+        
+        try:
+            tree, name = self.get_current_tree()
+            if not tree: 
+                 # Fallback to combined or common?
+                 # If no tab selected? Unlikely.
+                 name = "combined" 
+            
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # Spec Columns: hostname, ip_or_hash, comparison_result, onboarded
+                writer.writerow(["hostname", "ip_or_hash", "comparison_result", "onboarded"])
+                
+
+                
+                # Correct Logic: Use the 'name' from get_current_tree to fetch from last_results
+                target_data = self.last_results.get(name, [])
+                for item in target_data:
+                    writer.writerow([
+                        item.get('hostname', ''),
+                        item.get('ip_or_hash', ''),
+                        item.get('comparison_result', ''),
+                        item.get('onboarded', 'No')
+                    ])
+            messagebox.showinfo("Success", "Export successful.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export: {e}")
 
     def export_json(self):
         tree, name = self.get_current_tree()
         if not tree: return
         file_path = filedialog.asksaveasfilename(defaultextension=".json", initialfile=f"{name}_results.json")
         if file_path:
-            items = [tree.item(child)['values'][0] for child in tree.get_children()]
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump(items, f, indent=2)
+                    # Use logical data from last_results
+                    target_data = self.last_results.get(name, [])
+                    json.dump(target_data, f, indent=2)
                 messagebox.showinfo("Success", "Export successful.")
             except Exception as e:
-                messagebox.showerror("Error", f"Export failed: {e}")
+                messagebox.showerror("Error", f"Failed to export: {e}")
+
+    def on_closing(self):
+        # Custom centered dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Quit")
+        dialog.geometry("300x120")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Calculate center relative to parent
+        self.root.update_idletasks() # Ensure geometry is up to date
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (300 // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (120 // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Content
+        msg_frame = ttk.Frame(dialog, padding=20)
+        msg_frame.pack(fill='both', expand=True)
+        
+        ttk.Label(msg_frame, text="Do you want to quit?", anchor='center').pack(pady=(10, 20))
+        
+        btn_frame = ttk.Frame(msg_frame)
+        btn_frame.pack()
+        
+        def confirm():
+            dialog.destroy()
+            self.root.destroy()
+            
+        def cancel():
+            dialog.destroy()
+            
+        ttk.Button(btn_frame, text="OK", command=confirm, width=10).pack(side='left', padx=10)
+        ttk.Button(btn_frame, text="Cancel", command=cancel, width=10).pack(side='left', padx=10)
+        
+        self.root.wait_window(dialog)
+
+
+
 
 
 
 def main_gui():
     root = tk.Tk()
     app = SeparatorGUI(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
 
 if __name__ == '__main__':

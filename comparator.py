@@ -35,22 +35,65 @@ class NormalizationEngine:
         return unique_parts
 
 class ComparisonEngine:
-    def compare(self, list_a: list[str], list_b: list[str]) -> dict:
-        set_a = set(list_a)
-        set_b = set(list_b)
+    def compare(self, list_a: list[dict], list_b: list[dict], check_onboarded: bool = False) -> dict:
+        """
+        Compares two lists of assets.
+        Each item in the list is expected to be a dict with keys: 'hostname', 'ip_or_hash'
+        Comparison is done based on 'ip_or_hash' (primary key).
+        """
+        # Create dictionaries mapped by the primary key (ip_or_hash) for O(1) lookups
+        # Normalization (lower/strip) should generally happen before this, but we can ensure case-insensitivity here
         
-        # Logic:
-        # common: A ∩ B
-        common = sorted(list(set_a.intersection(set_b)))
+        dict_a = {item.get('ip_or_hash', '').lower().strip(): item for item in list_a if item.get('ip_or_hash')}
+        dict_b = {item.get('ip_or_hash', '').lower().strip(): item for item in list_b if item.get('ip_or_hash')}
         
-        # unique_to_a: A - B
-        unique_a = sorted(list(set_a - set_b))
+        keys_a = set(dict_a.keys())
+        keys_b = set(dict_b.keys())
         
-        # unique_to_b: B - A
-        unique_b = sorted(list(set_b - set_a))
+        # Sets
+        common_keys = keys_a.intersection(keys_b)
+        unique_a_keys = keys_a - keys_b
+        unique_b_keys = keys_b - keys_a
         
-        return {
-            "common": common,
-            "unique_to_a": unique_a,
-            "unique_to_b": unique_b
+        # Build Results
+        results = {
+            "common": [],
+            "unique_to_a": [],
+            "unique_to_b": []
         }
+
+        # Common
+        for k in common_keys:
+            # We preferentially take data from A, but allow merging if needed.
+            # Spec says: "common to both inputs"
+            item = dict_a[k].copy()
+            if check_onboarded:
+                item['onboarded'] = "Yes"
+            item['comparison_result'] = "common"
+            results['common'].append(item)
+            
+        # Unique A
+        for k in unique_a_keys:
+            item = dict_a[k].copy()
+            if check_onboarded:
+                item['onboarded'] = "No"  # Present in uploaded (A) but not in input (B) -> Not onboarded? 
+                # Actually, spec says: True condition: "ip_or_hash common to both inputs" -> Yes.
+                # False condition: "not common" -> No.
+            item['comparison_result'] = "unique_to_input A"
+            results['unique_to_a'].append(item)
+            
+        # Unique B
+        for k in unique_b_keys:
+            item = dict_b[k].copy()
+            if check_onboarded:
+                item['onboarded'] = "No"
+            item['comparison_result'] = "unique_to_input B"
+            results['unique_to_b'].append(item)
+            
+        # Sort results for consistent display
+        sort_key = lambda x: (x.get('hostname', '').lower(), x.get('ip_or_hash', ''))
+        results['common'].sort(key=sort_key)
+        results['unique_to_a'].sort(key=sort_key)
+        results['unique_to_b'].sort(key=sort_key)
+            
+        return results
