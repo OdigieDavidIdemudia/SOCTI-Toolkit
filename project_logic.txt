@@ -1,0 +1,65 @@
+SOCTI Toolkit - Project Logic Documentation
+===========================================
+
+This document outlines the core logic and architectural decisions for the Separator Tool (SepRep) and Proxy Configuration within the SOCTI Toolkit.
+
+1. Separator Tool Logic (SepRep)
+--------------------------------
+The Separator tool is designed to normalize and process text input, either for simple formatting or for reputation checking against external APIs (VirusTotal, AbuseIPDB).
+
+### A. Input Normalization
+- **Goal**: Convert raw, unstructured text (logs, lists, CSVs) into a clean list of unique tokens.
+- **Method**: 
+  1. All newlines (`\n`), commas (`,`), and tabs (`\t`) are replaced with a single space.
+  2. The text is then split by spaces (`.split()`) to create a list of tokens.
+  3. If "Standard Mode" is active and the input contains no spaces, it may optionally split by character (though this is conditional logic in `gui.py`).
+
+### B. Execution Modes
+The tool operates in two distinct modes based on user selection:
+
+1.  **Standard Mode (Formatting Only)**:
+    - **Logic**: Takes the tokenized list and joins them using the user-specified separator (default: `,`).
+    - **Use Case**: Quickly formatting a list of IPs or Hostnames for use in other queries (e.g., SQL `IN (...)` clauses).
+
+2.  **Reputation Mode (SepRep)**:
+    - **Trigger**: Activated when "VirusTotal" or "AbuseIPDB" checkboxes are selected.
+    - **Logic**:
+        - Iterates through each token.
+        - Classifies the token (IP, Hash, or Unknown) using Regex patterns.
+        - Queries selected APIs (VT / AbuseIPDB) via `reputation.py`.
+        - Respects API rate limits (e.g., 15s delay for public VirusTotal keys).
+    - **Output**: Generates a CSV report with columns for Indicator, Type, Scores, Countries, ISPs, and Final Verdicts.
+
+2. Proxy Configuration Logic
+----------------------------
+The application uses a centralized proxy configuration strategy to ensure all external requests (API calls) are routed correctly in corporate environments.
+
+### A. Implementation (`reputation.py`)
+The `BaseChecker` class is the foundation for network requests.
+
+- **Initialization**: Accepts a `proxy_settings` dictionary containing `host`, `port`, `username`, and `password`.
+- **Session Configuration**: Uses `requests.Session()` for connection pooling and persistence.
+
+### B. Credential Encoding
+- **Problem**: Special characters in usernames or passwords (e.g., `@`, `:`, `\`) can break standard URL formatting.
+- **Solution**: 
+    - Credentials are URL-encoded using `urllib.parse.quote_plus()`.
+    - This ensures `user@domain` becomes `user%40domain`, preventing parsing errors in the proxy URL.
+    - **Format**: `http://{encoded_user}:{encoded_password}@{host}:{port}`
+
+### C. SSL Verification
+- **Current State**: `verify=False` is set on the session to bypass SSL certificate verification errors often caused by corporate decrypting proxies.
+- **Warning**: InsecureRequestWarnings are suppressed using `urllib3.disable_warnings`.
+
+3. File Structure & Architecture
+--------------------------------
+- **`gui.py`**: Handles the Tkinter user interface, threading for responsiveness, and invokes logic methods.
+- **`reputation.py`**: Contains the core business logic for API interactions, proxy configuration, and indicator classification.
+- **`main.py`**: Entry point (mostly legacy/simple wrapper).
+- **`comparator.py`**: Logic for the Asset Comparator tool (List comparison).
+
+4. Future Reuse
+---------------
+To apply this logic to another software:
+- **Reuse `reputation.py`**: This file is modular. You can import `ReputationChecker` or `BaseChecker` in any Python script that needs proxy-aware HTTP requests or VT/AbuseIPDB integration.
+- **Reuse Proxy Pattern**: specific attention should be paid to the `_configure_proxy` method in `BaseChecker` for handling authenticated proxies robustly.

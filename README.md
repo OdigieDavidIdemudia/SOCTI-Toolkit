@@ -1,94 +1,85 @@
-# SepX
+# SOCTI Toolkit
 
-A powerful separator tool with modern GUI - adds separators between tokens in any input text
+A comprehensive Security Operations toolkit combining token separation, reputation scoring, and asset comparison, designed for detailed analysis in corporate environments. 
+
+## Features
+
+### 1. SepRep (Separator + Reputation)
+A dual-mode tool for normalizing data and checking IoC reputation.
+- **Normalization**: Clean and format lists of IPs, Domains, or Hashes from raw text (logs, emails, CSVs).
+- **Reputation Checks**: 
+    - **VirusTotal**: Fetch detection ratios and community scores.
+    - **AbuseIPDB**: Check IP abuse confidence scores.
+    - **CSV Reports**: Generates detailed reports with Country, ISP, and Verdicts.
+
+### 2. Asset Comparator
+Compare two datasets to identify discrepancies quickly.
+- **Set Operations**: Find Common items, Unique to A, and Unique to B.
+- **Normalization**: Auto-cleanup of inputs (whitespace trimming, deduplication).
+- **Export**: Save results to CSV or JSON.
+
+### 3. Proxy Support
+Built for corporate networks with strict firewall rules.
+- **Authenticated Proxy**: specific settings in `settings.json` to route traffic through corporate proxies.
+- **SSL Handling**: Configured to handle decrypting proxies gracefully.
+
+## Installation
+
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/StartYourOwn/SOCTI-Toolkit.git
+    cd SOCTI-Toolkit
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  **Configure Settings**:
+    Copy the example settings file and add your API keys/Proxy details.
+    ```bash
+    cp settings.json.example settings.json
+    ```
+    Edit `settings.json`:
+    ```json
+    {
+        "proxy": {
+            "host": "proxy.example.com",
+            "port": "8080",
+            "username": "user",
+            "password": "password"
+        },
+        "api_keys": {
+            "vt_key": "YOUR_VIRUSTOTAL_KEY",
+            "abuse_key": "YOUR_ABUSEIPDB_KEY"
+        }
+    }
+    ```
 
 ## Usage
 
 ### GUI Mode
-
-Launch the graphical interface:
-
+Launch the main interface:
 ```bash
 python gui.py
 ```
+- **SepRep Tab**: Paste text, select "VirusTotal" or "AbuseIPDB" to check reputation, or just click "Convert" to format.
+- **Asset Comparator Tab**: Upload files or paste lists to compare.
 
-![SepX GUI](https://raw.githubusercontent.com/OdigiePeters/SepX---separator-tool/main/screenshots/sepx_gui.png)
-
-The GUI provides:
-- **Text input area** for any content (supports multiline, special characters, numbers, etc.)
-- **Customizable separator field** (default: comma)
-- **Output display area** with formatted results
-- **Copy to clipboard** functionality for easy sharing
-- **Clear all button** to reset fields
-- **Status bar** showing conversion status
-- **Keyboard shortcut**: Press Enter to convert
-
-### CLI Mode
-
-Run with an argument:
-
+### CLI Mode (Separator Only)
+Quickly format lists from the command line:
 ```bash
-python main.py "david odigie mick ide victor"
-# -> david,odigie,mick,ide,victor
+python main.py "ip1 ip2 ip3" --sep ","
+# Output: ip1,ip2,ip3
 ```
 
-Or pipe input:
-
+## Building Portable Executable
+To create a standalone `.exe`:
 ```bash
-echo "david odigie mick ide victor" | python main.py
-# -> david,odigie,mick,ide,victor
-```
-
-Custom separator:
-
-```bash
-python main.py "a b c" --sep "|"
-# -> a|b|c
-```
-
-## Tests
-
-This project uses `pytest` for tests.
-
-Install pytest and run tests:
-
-```bash
-python -m pip install pytest
-pytest -q
-```
-
-## Portable Executable
-
-A standalone Windows executable is available in the `dist` folder:
-
-### Building the Executable
-
-To build the portable executable yourself:
-
-```bash
-pip install pyinstaller
 pyinstaller --onefile --windowed --name SepX gui.py
 ```
-
-The executable will be created in the `dist` folder as `SepX.exe` (approximately 10 MB).
-
-### Using the Portable Version
-
-1. Navigate to the `dist` folder
-2. Double-click `SepX.exe` to launch
-3. No Python installation required!
-4. Copy `SepX.exe` to any Windows device and run it directly
-
-### Distribution Package
-
-A ready-to-share ZIP file is available: **SepX-Portable.zip** (~10 MB)
-
-This package includes:
-- `SepX.exe` - The standalone application
-- `README.txt` - User instructions
-
-Simply share this ZIP file with anyone who needs the tool!
+The executable will be in the `dist/` folder.
 
 ## License
-
 MIT License

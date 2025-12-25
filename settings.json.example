@@ -1,0 +1,12 @@
+{
+    "proxy": {
+        "host": "",
+        "port": "",
+        "username": "",
+        "password": ""
+    },
+    "api_keys": {
+        "vt_key": "",
+        "abuse_key": ""
+    }
+}
