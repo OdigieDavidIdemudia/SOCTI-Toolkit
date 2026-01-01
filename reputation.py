@@ -97,7 +97,8 @@ class VirusTotalChecker(BaseChecker):
                     "source": "VirusTotal",
                     "reputation": rep,
                     "stats": stats,
-                    "malicious_score": malicious
+                    "malicious_score": malicious,
+                    "threat_category": data.get('data', {}).get('attributes', {}).get('popular_threat_classification', {}).get('suggested_threat_label', 'Unknown')
                 }
             elif response.status_code == 429:
                 return {"error": "Rate Limit Exceeded", "reputation": "Unknown"}

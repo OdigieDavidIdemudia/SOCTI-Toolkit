@@ -12,6 +12,7 @@ import csv
 import os
 import pandas as pd
 import ctypes
+import dns_engine
 
 class SeparatorGUI:
     def __init__(self, root):
@@ -214,6 +215,11 @@ class SeparatorGUI:
         self.sep_output = scrolledtext.ScrolledText(main_frame, height=8, state='disabled')
         self.sep_output.pack(fill='both', expand=True, pady=(5, 10))
         
+        # Color Tags
+        self.sep_output.tag_config('red', foreground='red')
+        self.sep_output.tag_config('green', foreground='green')
+        self.sep_output.tag_config('grey', foreground='grey')
+        
         # Controls
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill='x')
@@ -409,7 +415,7 @@ class SeparatorGUI:
                 "VT_Score", "VT_Verdict", 
                 "Abuse_Score", "Abuse_Verdict", 
                 "Country", "ISP", "Total_Reports", 
-                "Final_Verdict"
+                "Final_Verdict", "Threat_Category"
             ])
             
             self.append_output(f"Processing {total} tokens...\n")
@@ -440,6 +446,7 @@ class SeparatorGUI:
                 vt_data = res.get('vt', {})
                 vt_score = vt_data.get('malicious_score', '-')
                 vt_verdict = vt_data.get('reputation', '-')
+                vt_threat = vt_data.get('threat_category', 'Unknown')
                 if "error" in vt_data: vt_verdict = f"Error: {vt_data.get('error')}"
                 
                 # AbuseIPDB Data
@@ -457,7 +464,7 @@ class SeparatorGUI:
                     str(vt_score), vt_verdict, 
                     str(ab_score), ab_verdict, 
                     ab_country, ab_isp, str(ab_reports),
-                    final_verdict
+                    final_verdict, vt_threat
                 ])
                 
                 # Update UI Output (Log style)
@@ -468,13 +475,22 @@ class SeparatorGUI:
                     row_str += f" | VT Error: {vt_data.get('error')}"
                 else:
                     row_str += f" | VT:{vt_score}"
+                    if vt_threat != 'Unknown':
+                         row_str += f" ({vt_threat})"
                     
                 if "error" in ab_data:
                     row_str += f" | AB Error: {ab_data.get('error')}"
                 else:
                     row_str += f" | AB:{ab_score}"
 
-                self.append_output(row_str + "\n")
+                # Determine Color Tag
+                tag = 'grey'
+                if final_verdict == 'Malicious':
+                    tag = 'red'
+                elif final_verdict == 'Safe':
+                    tag = 'green'
+                
+                self.append_output(row_str + "\n", tag=tag)
                 
                 # Rate Limit Delay (VT=15s, AbuseOnly=1s)
                 if processed < total:
@@ -512,9 +528,12 @@ class SeparatorGUI:
         self.sep_output.insert("1.0", text)
         self.sep_output.configure(state='disabled')
 
-    def append_output(self, text):
+    def append_output(self, text, tag=None):
         self.sep_output.configure(state='normal')
-        self.sep_output.insert(tk.END, text)
+        if tag:
+            self.sep_output.insert(tk.END, text, (tag,))
+        else:
+            self.sep_output.insert(tk.END, text)
         self.sep_output.see(tk.END)
         self.sep_output.configure(state='disabled')
 
@@ -583,6 +602,10 @@ class SeparatorGUI:
         self.norm_status_var = tk.StringVar(value="Ready")
         self.lbl_status = ttk.Label(action_container, textvariable=self.norm_status_var, foreground='gray', font=('Arial', 9, 'italic'))
         self.lbl_status.pack(pady=10)
+
+        # Lookup Button (New v1.1)
+        self.btn_lookup = ttk.Button(action_container, text="Lookup (DNS)", command=self.run_host_lookup_threaded, style='Secondary.TButton', state='disabled')
+        self.btn_lookup.pack(fill='x', pady=5)
         
         # Secondary Actions
         ttk.Separator(action_container, orient='horizontal').pack(fill='x', pady=10)
@@ -594,17 +617,19 @@ class SeparatorGUI:
         self.host_paned.add(self.p3_frame, weight=2)
         
         # Treeview
-        cols = ('type', 'host', 'ip', 'source')
+        cols = ('type', 'host', 'ip', 'source', 'status')
         self.host_tree = ttk.Treeview(self.p3_frame, columns=cols, show='headings')
         self.host_tree.heading('type', text='Asset Type')
         self.host_tree.heading('host', text='Hostname')
         self.host_tree.heading('ip', text='IP Address')
         self.host_tree.heading('source', text='Source')
+        self.host_tree.heading('status', text='Lookup Status')
         
         self.host_tree.column('type', width=80)
         self.host_tree.column('host', width=150)
         self.host_tree.column('ip', width=120)
         self.host_tree.column('source', width=80)
+        self.host_tree.column('status', width=100)
         
         scrollbar = ttk.Scrollbar(self.p3_frame, orient="vertical", command=self.host_tree.yview)
         self.host_tree.configure(yscrollcommand=scrollbar.set)
@@ -634,6 +659,7 @@ class SeparatorGUI:
         self.lbl_status.configure(foreground='gray')
         self.host_state = "raw"
         self.host_normalized_cache = []
+        self.btn_lookup.configure(state='disabled') # Disable lookup
         # Clear tree
         for item in self.host_tree.get_children():
             self.host_tree.delete(item)
@@ -666,14 +692,78 @@ class SeparatorGUI:
             atype, host, ip = result
             
             # Insert into Tree
-            self.host_tree.insert('', 'end', values=(atype, host, ip, "Derived"))
+            self.host_tree.insert('', 'end', iid=str(len(self.host_parsed_data)), values=(atype, host, ip, "Derived", "Pending"))
             
             self.host_parsed_data.append({
                 "type": atype,
                 "hostname": host,
                 "ip": ip,
-                "source": "Derived"
+                "source": "Derived",
+                "status": "Pending",
+                "id": str(len(self.host_parsed_data))
             })
+
+        if self.host_parsed_data:
+             self.btn_lookup.configure(state='normal')
+        else:
+             self.btn_lookup.configure(state='disabled')
+
+    def run_host_lookup_threaded(self):
+        self.btn_lookup.configure(state='disabled') # Prevent double click
+        self.lbl_status.configure(text="Running DNS Lookup...", foreground='orange')
+        t = threading.Thread(target=self.run_host_lookup)
+        t.start()
+
+    def run_host_lookup(self):
+        try:
+             engine = dns_engine.DNSLookupEngine()
+             
+             # Items to resolve
+             to_resolve = self.host_parsed_data
+             
+             def callback(res_item):
+                 # Update UI thread-safe
+                 self.root.after(0, self.update_host_row, res_item)
+                 
+             results = engine.resolve_batch(to_resolve, callback=callback)
+             
+             # Update main data list with results
+             # results is list of dicts. map back by ID or index
+             self.host_parsed_data = results
+             
+             self.root.after(0, lambda: self.lbl_status.configure(text="Lookup Completed", foreground='green'))
+             self.root.after(0, lambda: self.btn_lookup.configure(state='normal'))
+             
+        except Exception as e:
+             print(f"DNS Error: {e}")
+             self.root.after(0, lambda: self.lbl_status.configure(text="Lookup Error", foreground='red'))
+             self.root.after(0, lambda: self.btn_lookup.configure(state='normal'))
+
+    def update_host_row(self, item):
+        # Find item in tree by iid (which we set to 'id' in process_host_v12)
+        iid = item.get('id')
+        if not iid: return
+        
+        # update values
+        # values=(atype, host, ip, source, status)
+        curr = self.host_tree.item(iid)['values']
+        # curr is a tuple/list.
+        
+        # New values
+        # type stays same
+        # host updated
+        # ip updated
+        # source stays same
+        # status updated
+        
+        new_vals = (
+            curr[0], 
+            item.get('hostname', ''), 
+            item.get('ip', ''), 
+            curr[3], 
+            item.get('status', 'Unknown')
+        )
+        self.host_tree.item(iid, values=new_vals)
 
     def export_host_csv(self):
         if not getattr(self, 'host_parsed_data', None):
@@ -685,7 +775,7 @@ class SeparatorGUI:
         
         try:
             with open(f, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['type', 'hostname', 'ip', 'source']
+                fieldnames = ['type', 'hostname', 'ip', 'source', 'status']
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(self.host_parsed_data)
@@ -726,7 +816,8 @@ class SeparatorGUI:
             data = []
             for item in items:
                 v = self.host_tree.item(item)['values']
-                data.append({"type": v[0], "hostname": v[1], "ip": v[2]})
+                v = self.host_tree.item(item)['values']
+                data.append({"type": v[0], "hostname": v[1], "ip": v[2], "source": v[3], "status": v[4]})
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2)
@@ -897,7 +988,7 @@ class SeparatorGUI:
         # Supports: 
         # 1. "hostname | ip" (from our excel import)
         # 2. "ip" (raw list)
-        # 3. "hostname, ip" etc
+        # 3. "hostname, ip" etc via main.classify_asset
         
         lines = text_content.split('\n')
         parsed = []
@@ -905,25 +996,35 @@ class SeparatorGUI:
             line = line.strip()
             if not line: continue
             
-            hostname = ""
-            ip_val = ""
-            
-            # Pipe split (our excel format)
-            if '|' in line:
-                parts = line.split('|')
-                if len(parts) >= 2:
-                    hostname = parts[0].strip()
-                    ip_val = parts[1].strip()
+            # Use main.classify_asset for robust parsing
+            try:
+                res = main.classify_asset(line)
+                if res:
+                    type_str, val, ip = res
+                    h_out = ""
+                    i_out = ""
+                    
+                    if type_str == "IPv4":
+                        i_out = ip
+                    elif type_str == "Hostname":
+                        h_out = val
+                    elif type_str == "Derived":
+                        h_out = val
+                        i_out = ip
+                    else:
+                        i_out = line
+                        
+                    if i_out:
+                        parsed.append({'hostname': h_out, 'ip_or_hash': i_out})
+                    elif h_out:
+                        parsed.append({'hostname': h_out, 'ip_or_hash': h_out}) 
                 else:
-                    ip_val = line.strip()
-            else:
-                # Fallback: assume whole line is IP/Hash if no obvious delimiter
-                # Or use regex to detect? 
-                # For v2.0 simple fallback:
-                ip_val = line
-            
-            if ip_val:
-                parsed.append({'hostname': hostname, 'ip_or_hash': ip_val})
+                     parsed.append({'hostname': '', 'ip_or_hash': line})
+            except Exception as e:
+                print(f"Error parsing line '{line}': {e}")
+                # Continue best effort
+                parsed.append({'hostname': '', 'ip_or_hash': line})
+
         return parsed
 
     def normalize_inputs(self):
@@ -943,47 +1044,77 @@ class SeparatorGUI:
         self.update_counts()
 
     def compare_inputs(self):
-        # Get raw text
-        raw_a = self.input_a.get("1.0", tk.END)
-        raw_b = self.input_b.get("1.0", tk.END)
-        
-        # Parse into structured data
-        list_a = self.parse_input(raw_a)
-        list_b = self.parse_input(raw_b)
-        
-        check_onboarded = self.var_mark_onboarded.get()
-        
-        # logic
-        res = self.comp_engine.compare(list_a, list_b, check_onboarded=check_onboarded)
-        # Combine all for the combined view
-        res['combined'] = res['common'] + res['unique_to_a'] + res['unique_to_b']
-        # Sort combined view to make it cohesive
-        res['combined'].sort(key=lambda x: (x.get('hostname', '').lower(), x.get('ip_or_hash', '')))
-        self.last_results = res # Cache for export
-        
-        # Populate Trees
-        self.populate_tree(self.tree_common, res['common'])
-        self.populate_tree(self.tree_combined, res['combined'])
-        self.populate_tree(self.tree_unique_a, res['unique_to_a'])
-        self.populate_tree(self.tree_unique_b, res['unique_to_b'])
-        
-        # Update tab titles with counts
-        self.res_notebook.tab(self.tab_common, text=f"Common ({len(res['common'])})")
-        self.res_notebook.tab(self.tab_combined, text=f"Combined ({len(res['combined'])})")
-        self.res_notebook.tab(self.tab_unique_a, text=f"Unique to A ({len(res['unique_to_a'])})")
-        self.res_notebook.tab(self.tab_unique_b, text=f"Unique to B ({len(res['unique_to_b'])})")
+        try:
+            print("--- STARTING COMPARISON ---")
+            # Get raw text
+            raw_a = self.input_a.get("1.0", tk.END)
+            raw_b = self.input_b.get("1.0", tk.END)
+            print(f"Raw A length: {len(raw_a)} bytes")
+            print(f"Raw B length: {len(raw_b)} bytes")
+            
+            # Parse into structured data
+            list_a = self.parse_input(raw_a)
+            list_b = self.parse_input(raw_b)
+            print(f"Parsed List A: {len(list_a)} items")
+            print(f"Parsed List B: {len(list_b)} items")
+            if list_a: print(f"Sample A[0]: {list_a[0]}")
+            if list_b: print(f"Sample B[0]: {list_b[0]}")
+            
+            check_onboarded = self.var_mark_onboarded.get()
+            print(f"Check Onboarded: {check_onboarded}")
+            
+            # logic
+            res = self.comp_engine.compare(list_a, list_b, check_onboarded=check_onboarded)
+            print(f"Comparison Results - Common: {len(res['common'])}")
+            print(f"Comparison Results - Unique A: {len(res['unique_to_a'])}")
+            print(f"Comparison Results - Unique B: {len(res['unique_to_b'])}")
+            
+            # Combine all for the combined view
+            res['combined'] = res['common'] + res['unique_to_a'] + res['unique_to_b']
+            # Sort combined view to make it cohesive
+            res['combined'].sort(key=lambda x: (x.get('hostname', '').lower(), x.get('ip_or_hash', '')))
+            self.last_results = res # Cache for export
+            
+            # Populate Trees
+            self.populate_tree(self.tree_common, res['common'])
+            self.populate_tree(self.tree_combined, res['combined'])
+            self.populate_tree(self.tree_unique_a, res['unique_to_a'])
+            self.populate_tree(self.tree_unique_b, res['unique_to_b'])
+            
+            # Update tab titles with counts
+            self.res_notebook.tab(self.tab_common, text=f"Common ({len(res['common'])})")
+            self.res_notebook.tab(self.tab_combined, text=f"Combined ({len(res['combined'])})")
+            self.res_notebook.tab(self.tab_unique_a, text=f"Unique to A ({len(res['unique_to_a'])})")
+            self.res_notebook.tab(self.tab_unique_b, text=f"Unique to B ({len(res['unique_to_b'])})")
+        except Exception as e:
+            messagebox.showerror("Comparison Error", f"An error occurred during comparison:\n{e}")
+            import traceback
+            traceback.print_exc()
 
     def refresh_view(self):
-        # Always update columns to reflect mode change immediately, even if empty
-        mode = "detailed" if self.var_mark_onboarded.get() else "simple"
-        self.configure_tree_columns(self.tree_common, mode)
-        self.configure_tree_columns(self.tree_combined, mode)
-        self.configure_tree_columns(self.tree_unique_a, mode)
-        self.configure_tree_columns(self.tree_unique_b, mode)
+        try:
+            # Always update columns to reflect mode change immediately
+            mode = "detailed" if self.var_mark_onboarded.get() else "simple"
+            
+            # Apply new column structure to all trees
+            trees = [self.tree_common, self.tree_combined, self.tree_unique_a, self.tree_unique_b]
+            for tree in trees:
+                self.configure_tree_columns(tree, mode)
 
-        # Triger re-compare if data exists to populate rows with correct fields
-        if self.input_a.get("1.0", tk.END).strip() or self.input_b.get("1.0", tk.END).strip():
-             self.compare_inputs()
+            # Trigger re-compare if data exists to populate rows with correct fields
+            has_input = self.input_a.get("1.0", tk.END).strip() or self.input_b.get("1.0", tk.END).strip()
+            
+            if has_input:
+                 self.compare_inputs()
+            else:
+                 # CRITICAL FIX: If no input, we MUST clear the trees because the columns have changed.
+                 # Existing items (formatted for old columns) would be invalid/invisible.
+                 for tree in trees:
+                     tree.delete(*tree.get_children())
+                     
+        except Exception as e:
+            print(f"Error in refresh_view: {e}")
+            messagebox.showerror("Error", f"Failed to refresh view: {e}")
 
     def configure_tree_columns(self, tree, mode="detailed"):
         if mode == "detailed":
