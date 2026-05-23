@@ -1,0 +1,5 @@
+python is used for automation and scripting
+
+lists tuples and dictionaries are core structures
+
+print('hello world')

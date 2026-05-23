@@ -1,0 +1,92 @@
+SOCTI Toolkit - Technical Guide
+===============================
+
+Overview
+--------
+The SOCTI Toolkit is a Python-based utility suite designed for Security Operations Center (SOC) analysts. It streamlines common tasks such as log parsing, indicator normalization, reputation checking (VirusTotal, AbuseIPDB), and asset list comparison. It is designed to work in corporate environments with support for authenticated proxies and SSL verification bypassing.
+
+Modules Breakdown
+-----------------
+The toolkit is modular, with distinct files handling specific logical components:
+
+1. GUI (gui.py)
+   - Purpose: The graphical user interface powered by Tkinter.
+   - Key Features:
+     - Multi-tab layout: SepRep, HostSplit, Asset Comparator.
+     - Threading: Ensures the UI remains responsive during long-running network requests (DNS, API).
+     - Settings: Manages persistent configuration (proxy, API keys) via `settings.json`.
+     - Theme: Supports Light and Dark modes.
+
+2. Main Logic (main.py)
+   - Purpose: Core logic for text processing and normalization.
+   - Key Functions:
+     - `normalize_input_v12(text)`: Converts raw text -> cleaned, deduplicated list.
+     - `classify_asset(token)`: Identifies if a token is an IP, Hostname, or Composite (e.g., "Host @ IP").
+     - `normalize_and_merge(text)`: Performs "Smart Deduplication", merging entries based on IP/Hash while preserving Hostnames.
+
+3. Reputation Engine (reputation.py)
+   - Purpose: Handles all external API interactions.
+   - Key Classes:
+     - `BaseChecker`: Manages HTTP sessions, authenticates with proxies (handling URL encoding for special characters), and suppresses SSL warnings.
+     - `VirusTotalChecker`: Interacts with VirusTotal API v3.
+     - `AbuseIPDBChecker`: Interacts with AbuseIPDB API v2.
+     - `ReputationChecker`: Facade that orchestrates checks across enabled services.
+
+4. Asset Comparator (comparator.py)
+   - Purpose: Logic for comparing two dataset lists.
+   - Key Functions:
+     - `ComparisonEngine`: Compares two normalized lists to find Common, Unique to A, and Unique to B items. It uses smart merging to prefer entries with specific hostnames over generic IPs.
+
+5. DNS Engine (dns_engine.py)
+   - Purpose: Performs bulk DNS lookups.
+   - Key Features:
+     - `DNSLookupEngine`: Uses `concurrent.futures` to run multiple `nslookup` commands in parallel.
+     - Supports both Forward (Host -> IP) and Reverse (IP -> Host) lookups.
+     - Security: Validates input to prevent command injection.
+
+Usage Steps
+-----------
+
+1. Launching the Application
+   - Requirement: Python 3.x installed with dependencies (`requests`, `Pillow`, `pandas` etc. listed in `requirements.txt`).
+   - Command: Run `python gui.py` (or `main.py` if configured as entry).
+   - Notes: On Windows, it sets the AppUserModelID to ensure the taskbar icon displays correctly.
+
+2. Configuring Settings
+   - Navigate to the "SepRep" tab.
+   - Proxy: Click "Proxy Settings". Enter Host, Port, Username, Password. Check "Enable Proxy Connection".
+   - Keys: Click "API Settings". Enter your VirusTotal and AbuseIPDB API keys.
+
+3. Using SepRep (Separator & Reputation)
+   - Goal: Clean up a messy list of indicators or check their reputation.
+   - Steps:
+     1. Paste text into "Input Text".
+     2. Select Separator (default `,`).
+     3. (Optional) Check "VirusTotal" or "AbuseIPDB".
+     4. Click "Convert / Process".
+   - Output: Normalized list (Standard Mode) or Color-coded log with verdicts (Reputation Mode).
+   - Export: Results are auto-exported to a CSV file in the working directory.
+
+4. Using HostSplit (Host/IP Parser)
+   - Goal: Extract valid IPs and Hostnames from unstructured logs (e.g., "Server1 (10.0.0.1)", "User@192.168.1.5").
+   - Steps:
+     1. Go to "HostSplit" tab.
+     2. Paste mixed content into "Raw Host / IP Input".
+     3. Click "Split Hosts / IPs".
+     4. View results in the table.
+     5. (Optional) Click "Lookup (DNS)" to resolve missing IPs or Hostnames.
+   - Export: Use "Export JSON" or "Export CSV" to save the structured table.
+
+5. Using Asset Comparator
+   - Goal: Compare two lists (e.g., "Yesterday's Scan" vs "Today's Scan").
+   - Steps:
+     1. Go to "Asset Comparator" tab.
+     2. Paste List A and List B.
+     3. Click "Compare".
+     4. View "Common", "Unique A", and "Unique B" in the respective columns.
+
+Technical Notes
+---------------
+- The tool creates a `settings.json` file to store credentials locally.
+- It suppresses `InsecureRequestWarning` to function behind corporate SSL-decrypting proxies.
+- Rate limits are hardcoded (15s for VT public key, 1s for AbuseIPDB) to prevent API bans.

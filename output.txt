@@ -1,0 +1,21 @@
+COLUMNS:
+["USR USERNAME", "CNT", "LOG IP LIST", "LOG INIT DATE LIST", "LOG END DATE LIST", "LOG CLIENT HOSTNAME LIST"]
+DATA:
+[
+  {
+    "USR USERNAME": "abdul.abdulganiyu",
+    "CNT": "1",
+    "LOG IP LIST": "102.91.102.137, ",
+    "LOG INIT DATE LIST": "2026-03-07 00:50:14, ",
+    "LOG END DATE LIST": "",
+    "LOG CLIENT HOSTNAME LIST": "processmaker.gtbank.com, "
+  },
+  {
+    "USR USERNAME": "adaeze.okonkwo",
+    "CNT": "4",
+    "LOG IP LIST": "102.218.103.1, ,102.218.103.1, ,102.218.103.1, ,102.218.103.1, ",
+    "LOG INIT DATE LIST": "2026-03-07 04:27:32, ,2026-03-07 05:23:49, ,2026-03-07 06:01:56, ,2026-03-07 07:07:34, ",
+    "LOG END DATE LIST": "",
+    "LOG CLIENT HOSTNAME LIST": "processmaker.gtbank.com, ,processmaker.gtbank.com, ,processmaker.gtbank.com, ,processmaker.gtbank.com, "
+  }
+]

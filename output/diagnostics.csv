@@ -1,0 +1,5 @@
+joined_hostname_raw,joined_hostname_norm,_merge_status,inv_hostname_raw,inv_hostname_norm,inv_ip_raw,inv_ip_norm,inv_mac_raw,inv_mac_norm
+IDM01_TSG028$,IDM01_TSG028,both,GTBANK\IDM01_TSG028,IDM01_TSG028,10.2.53.68,10.2.53.68,24fbe349695a,24FBE349695A
+WSE05_TCAPTAIN$,WSE05_TCAPTAIN,left_only,,,,,,
+LAF01_TSU07$,LAF01_TSU07,left_only,,,,,,
+BUR01-MRIT02$,BUR01-MRIT02,both,GTBANK\BUR01-MRIT02,BUR01-MRIT02,10.2.11.106,10.2.11.106,ecb1d7534c65,ECB1D7534C65

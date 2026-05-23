@@ -1,0 +1,78 @@
+{"timestamp": "2026-03-06 11:33:47,489", "level": "INFO", "message": "Starting processing pipeline...", "module": "main", "line": 17}
+{"timestamp": "2026-03-06 11:33:47,496", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/System Joined in Domain  2.csv to archive\\20260306_113347_System Joined in Domain  2.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:33:47,505", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/Hosts_2026_02_10_13_12.csv to archive\\20260306_113347_Hosts_2026_02_10_13_12.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:33:47,509", "level": "INFO", "message": "Garbage Collection: Found 2 files in archive", "module": "utils", "line": 108}
+{"timestamp": "2026-03-06 11:33:47,514", "level": "INFO", "message": "Garbage Collection: No files needed to be removed from archive", "module": "utils", "line": 148}
+{"timestamp": "2026-03-06 11:33:47,520", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/System Joined in Domain  2.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:33:47,547", "level": "INFO", "message": "Attempting to split 'joined_date' into date and time...", "module": "ingestion", "line": 62}
+{"timestamp": "2026-03-06 11:33:47,559", "level": "INFO", "message": "Successfully split joined_date into date and time.", "module": "ingestion", "line": 72}
+{"timestamp": "2026-03-06 11:33:47,563", "level": "INFO", "message": "Columns found: ['username', 'hostname', 'event_name', 'log_source', 'event_count', 'joined_date', 'low_level_category', 'source_ip', 'source_port', 'destination_ip', 'destination_port', '__hostname_raw', 'joined_time']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:33:47,573", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/Hosts_2026_02_10_13_12.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:33:47,601", "level": "INFO", "message": "Columns found: ['connectivity', 'hostname', 'ip_address', 'segment', 'appliance', 'mac_address', 'comment', 'switch_ip/fqdn_and_port_name', 'switch_port_alias', 'switch_port_name', 'switch_hostname', 'display_name', 'actions', 'function', '__hostname_raw', '__ip_address_raw', '__mac_address_raw']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:33:47,607", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:33:47,617", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:33:47,624", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:33:47,636", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:33:47,656", "level": "INFO", "message": "Validating host inventory...", "module": "ingestion", "line": 145}
+{"timestamp": "2026-03-06 11:33:47,660", "level": "INFO", "message": "Correlating data...", "module": "correlation", "line": 12}
+{"timestamp": "2026-03-06 11:33:47,672", "level": "INFO", "message": "Joined DF Hostnames (First 5): ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "correlation", "line": 15}
+{"timestamp": "2026-03-06 11:33:47,687", "level": "INFO", "message": "Inventory DF Hostnames (First 5): ['IDM01_TSG028', 'BUR01-MRIT02']", "module": "correlation", "line": 16}
+{"timestamp": "2026-03-06 11:33:47,711", "level": "INFO", "message": "Correlation complete. Matched: 2, Unresolved: 2", "module": "correlation", "line": 39}
+{"timestamp": "2026-03-06 11:33:47,724", "level": "INFO", "message": "Stored 2 unresolved records to C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output\\unresolved_records_20260306_113347.json", "module": "correlation", "line": 63}
+{"timestamp": "2026-03-06 11:33:47,730", "level": "INFO", "message": "Generating diagnostics report...", "module": "diagnostics", "line": 14}
+{"timestamp": "2026-03-06 11:33:47,745", "level": "INFO", "message": "Diagnostics report saved to: output\\diagnostics.csv", "module": "diagnostics", "line": 81}
+{"timestamp": "2026-03-06 11:33:47,755", "level": "INFO", "message": "Diagnostics Summary: 4 rows, 2 unmatched.", "module": "diagnostics", "line": 86}
+{"timestamp": "2026-03-06 11:41:08,150", "level": "INFO", "message": "Starting processing pipeline...", "module": "main", "line": 17}
+{"timestamp": "2026-03-06 11:41:08,167", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/System Joined in Domain  2.csv to archive\\20260306_114108_System Joined in Domain  2.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:41:08,174", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/System Joined in Domain  2.csv to archive\\20260306_114108_System Joined in Domain  2.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:41:08,177", "level": "INFO", "message": "Garbage Collection: Found 3 files in archive", "module": "utils", "line": 108}
+{"timestamp": "2026-03-06 11:41:08,182", "level": "INFO", "message": "Garbage Collection: No files needed to be removed from archive", "module": "utils", "line": 148}
+{"timestamp": "2026-03-06 11:41:08,186", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/System Joined in Domain  2.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:41:08,195", "level": "INFO", "message": "Attempting to split 'joined_date' into date and time...", "module": "ingestion", "line": 62}
+{"timestamp": "2026-03-06 11:41:08,202", "level": "INFO", "message": "Successfully split joined_date into date and time.", "module": "ingestion", "line": 72}
+{"timestamp": "2026-03-06 11:41:08,206", "level": "INFO", "message": "Columns found: ['username', 'hostname', 'event_name', 'log_source', 'event_count', 'joined_date', 'low_level_category', 'source_ip', 'source_port', 'destination_ip', 'destination_port', '__hostname_raw', 'joined_time']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:41:08,209", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/System Joined in Domain  2.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:41:08,217", "level": "INFO", "message": "Attempting to split 'joined_date' into date and time...", "module": "ingestion", "line": 62}
+{"timestamp": "2026-03-06 11:41:08,222", "level": "INFO", "message": "Successfully split joined_date into date and time.", "module": "ingestion", "line": 72}
+{"timestamp": "2026-03-06 11:41:08,224", "level": "INFO", "message": "Columns found: ['username', 'hostname', 'event_name', 'log_source', 'event_count', 'joined_date', 'low_level_category', 'source_ip', 'source_port', 'destination_ip', 'destination_port', '__hostname_raw', 'joined_time']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:41:08,232", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:41:08,242", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:41:08,247", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:41:08,254", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:41:18,953", "level": "INFO", "message": "Starting processing pipeline...", "module": "main", "line": 17}
+{"timestamp": "2026-03-06 11:41:18,964", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/System Joined in Domain  2.csv to archive\\20260306_114118_System Joined in Domain  2.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:41:18,971", "level": "INFO", "message": "Archived input file: C:/Users/DELL/Downloads/Hosts_2026_02_10_13_12.csv to archive\\20260306_114118_Hosts_2026_02_10_13_12.csv", "module": "utils", "line": 80}
+{"timestamp": "2026-03-06 11:41:18,974", "level": "INFO", "message": "Garbage Collection: Found 5 files in archive", "module": "utils", "line": 108}
+{"timestamp": "2026-03-06 11:41:18,984", "level": "INFO", "message": "Garbage Collection: No files needed to be removed from archive", "module": "utils", "line": 148}
+{"timestamp": "2026-03-06 11:41:18,988", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/System Joined in Domain  2.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:41:18,997", "level": "INFO", "message": "Attempting to split 'joined_date' into date and time...", "module": "ingestion", "line": 62}
+{"timestamp": "2026-03-06 11:41:19,003", "level": "INFO", "message": "Successfully split joined_date into date and time.", "module": "ingestion", "line": 72}
+{"timestamp": "2026-03-06 11:41:19,007", "level": "INFO", "message": "Columns found: ['username', 'hostname', 'event_name', 'log_source', 'event_count', 'joined_date', 'low_level_category', 'source_ip', 'source_port', 'destination_ip', 'destination_port', '__hostname_raw', 'joined_time']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:41:19,013", "level": "INFO", "message": "Loading data from C:/Users/DELL/Downloads/Hosts_2026_02_10_13_12.csv", "module": "ingestion", "line": 83}
+{"timestamp": "2026-03-06 11:41:19,022", "level": "INFO", "message": "Columns found: ['connectivity', 'hostname', 'ip_address', 'segment', 'appliance', 'mac_address', 'comment', 'switch_ip/fqdn_and_port_name', 'switch_port_alias', 'switch_port_name', 'switch_hostname', 'display_name', 'actions', 'function', '__hostname_raw', '__ip_address_raw', '__mac_address_raw']", "module": "ingestion", "line": 111}
+{"timestamp": "2026-03-06 11:41:19,027", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:41:19,036", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:41:19,042", "level": "INFO", "message": "Normalizing column: hostname", "module": "normalization", "line": 15}
+{"timestamp": "2026-03-06 11:41:19,055", "level": "INFO", "message": "Sample normalized values for hostname: ['IDM01_TSG028', 'BUR01-MRIT02']", "module": "normalization", "line": 37}
+{"timestamp": "2026-03-06 11:41:19,063", "level": "INFO", "message": "Validating host inventory...", "module": "ingestion", "line": 145}
+{"timestamp": "2026-03-06 11:41:19,072", "level": "INFO", "message": "Correlating data...", "module": "correlation", "line": 12}
+{"timestamp": "2026-03-06 11:41:19,080", "level": "INFO", "message": "Joined DF Hostnames (First 5): ['IDM01_TSG028', 'WSE05_TCAPTAIN', 'LAF01_TSU07', 'BUR01-MRIT02']", "module": "correlation", "line": 15}
+{"timestamp": "2026-03-06 11:41:19,087", "level": "INFO", "message": "Inventory DF Hostnames (First 5): ['IDM01_TSG028', 'BUR01-MRIT02']", "module": "correlation", "line": 16}
+{"timestamp": "2026-03-06 11:41:19,105", "level": "INFO", "message": "Correlation complete. Matched: 2, Unresolved: 2", "module": "correlation", "line": 39}
+{"timestamp": "2026-03-06 11:41:19,123", "level": "INFO", "message": "Stored 2 unresolved records to C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output\\unresolved_records_20260306_114119.json", "module": "correlation", "line": 63}
+{"timestamp": "2026-03-06 11:41:19,129", "level": "INFO", "message": "Generating diagnostics report...", "module": "diagnostics", "line": 14}
+{"timestamp": "2026-03-06 11:41:19,149", "level": "INFO", "message": "Diagnostics report saved to: output\\diagnostics.csv", "module": "diagnostics", "line": 81}
+{"timestamp": "2026-03-06 11:41:19,156", "level": "INFO", "message": "Diagnostics Summary: 4 rows, 2 unmatched.", "module": "diagnostics", "line": 86}
+{"timestamp": "2026-03-06 11:41:19,166", "level": "INFO", "message": "Generating report using template: C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\itaudit_engine\\templates\\Domain_Admission_Review.docx", "module": "reporting", "line": 15}
+{"timestamp": "2026-03-06 11:41:19,204", "level": "INFO", "message": "Saving report to: C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output\\Domain_Admission_Review_2026-03-06_11-41-19.docx", "module": "reporting", "line": 91}
+{"timestamp": "2026-03-06 11:41:19,226", "level": "INFO", "message": "Saving Excel report to: C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output\\Domain_Admission_Review_2026-03-06_11-41-19.xlsx", "module": "reporting", "line": 103}
+{"timestamp": "2026-03-06 11:41:19,540", "level": "INFO", "message": "Garbage Collection: Found 5 files in C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output", "module": "utils", "line": 108}
+{"timestamp": "2026-03-06 11:41:19,543", "level": "INFO", "message": "Garbage Collection: No files needed to be removed from C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output", "module": "utils", "line": 148}
+{"timestamp": "2026-03-06 11:41:19,553", "level": "INFO", "message": "Pipeline completed successfully.", "module": "main", "line": 68}
+{"timestamp": "2026-05-14 15:53:53,689", "level": "INFO", "message": "Correlating data...", "module": "correlation", "line": 12}
+{"timestamp": "2026-05-14 15:53:53,696", "level": "INFO", "message": "Joined DF Hostnames (First 5): ['HOST1', 'HOST2', 'HOST1']", "module": "correlation", "line": 15}
+{"timestamp": "2026-05-14 15:53:53,697", "level": "INFO", "message": "Inventory DF Hostnames (First 5): ['HOST1', 'HOST1', 'HOST3']", "module": "correlation", "line": 16}
+{"timestamp": "2026-05-14 15:53:53,710", "level": "WARNING", "message": "Duplicate hostnames found in System Joined Domain data: ['HOST1']. Deduplicating (keeping first occurrence).", "module": "correlation", "line": 21}
+{"timestamp": "2026-05-14 15:53:53,713", "level": "WARNING", "message": "Duplicate hostnames found in Host Inventory data: ['HOST1']. Deduplicating (keeping first occurrence) to prevent join explosion.", "module": "correlation", "line": 27}
+{"timestamp": "2026-05-14 15:53:53,745", "level": "INFO", "message": "Correlation complete. Matched: 1, Unresolved: 1", "module": "correlation", "line": 45}
+{"timestamp": "2026-05-14 15:53:53,752", "level": "INFO", "message": "Stored 1 unresolved records to C:\\Users\\DELL\\.gemini\\antigravity\\scratch\\SOCTI Toolkit\\output\\unresolved_records_20260514_155353.json", "module": "correlation", "line": 69}

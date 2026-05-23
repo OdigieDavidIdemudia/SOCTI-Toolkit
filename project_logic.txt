@@ -3,9 +3,9 @@ SOCTI Toolkit - Project Logic Documentation
 
 This document outlines the core logic and architectural decisions for the Separator Tool (SepRep) and Proxy Configuration within the SOCTI Toolkit.
 
-1. Separator Tool Logic (SepRep)
---------------------------------
-The Separator tool is designed to normalize and process text input, either for simple formatting or for reputation checking against external APIs (VirusTotal, AbuseIPDB).
+1. Separator Tool Logic (SepRep v0.3)
+----------------------------------------
+The Separator tool is designed to normalize and process text input, either for simple formatting or for reputation checking against VirusTotal.
 
 ### A. Input Normalization
 - **Goal**: Convert raw, unstructured text (logs, lists, CSVs) into a clean list of unique tokens.
@@ -21,14 +21,16 @@ The tool operates in two distinct modes based on user selection:
     - **Logic**: Takes the tokenized list and joins them using the user-specified separator (default: `,`).
     - **Use Case**: Quickly formatting a list of IPs or Hostnames for use in other queries (e.g., SQL `IN (...)` clauses).
 
-2.  **Reputation Mode (SepRep)**:
-    - **Trigger**: Activated when "VirusTotal" or "AbuseIPDB" checkboxes are selected.
+2.  **Reputation Mode (SepRep v0.3)**:
+    - **Trigger**: Activated when "VirusTotal" or "AbuseIPDB" checkboxes are selected (Legacy UI triggers v0.3 engine).
+    - **Engine**: Uses `seprep.SepRepEngine` (VirusTotal Only).
     - **Logic**:
         - Iterates through each token.
-        - Classifies the token (IP, Hash, or Unknown) using Regex patterns.
-        - Queries selected APIs (VT / AbuseIPDB) via `reputation.py`.
-        - Respects API rate limits (e.g., 15s delay for public VirusTotal keys).
-    - **Output**: Generates a CSV report with columns for Indicator, Type, Scores, Countries, ISPs, and Final Verdicts.
+        - Classifies the token (IPv4, SHA256, SHA1, MD5, Domain) using strict Regex with specific evaluation order.
+        - Queries VirusTotal API v3 endpoints.
+        - Respects API rate limits (15s delay for public VirusTotal keys).
+    - **Output**: Generates a CSV report with columns: Indicator, Type, Score, Classification, Source, Error.
+    - **Classification**: Safe (0), Suspicious (1-2), Malicious (>2).
 
 2. Proxy Configuration Logic
 ----------------------------

@@ -5,15 +5,29 @@ from PIL import Image, ImageTk
 import threading
 import time
 import reputation
+import seprep
 import main
 import comparator
 import json
 import csv
+import subprocess
 import os
-import pandas as pd
 import ctypes
 import dns_engine
+import ping_engine
+import ad_engine
+import copy
+import pm_engine
+import pm_email_dispatcher
+import ldap_engine
 
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), 'I-Mrk'))
+from imrk.chunker import chunk_text
+from imrk.classifier import classify_chunk
+from imrk.formatter import format_chunk
+from imrk.renderer import assemble_document
+from imrk.llm import enhance_with_llm
 class SeparatorGUI:
     def __init__(self, root):
         self.root = root
@@ -83,6 +97,8 @@ class SeparatorGUI:
         
         self.btn_theme = ttk.Button(self.glo_header, text="Toggle Theme", command=self.toggle_theme, style='Secondary.TButton')
         self.btn_theme.pack(side='right', padx=10)
+        ttk.Button(self.glo_header, text="Proxy Settings", command=self.open_proxy_modal, style='Secondary.TButton').pack(side='right', padx=(0, 5))
+        ttk.Button(self.glo_header, text="API Settings", command=self.open_api_modal, style='Secondary.TButton').pack(side='right', padx=(0, 5))
 
         # Notebook for Tabs
         self.notebook = ttk.Notebook(root)
@@ -102,6 +118,31 @@ class SeparatorGUI:
         self.comp_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.comp_frame, text='Asset Comparator')
         self.create_comparator_tab(self.comp_frame)
+
+        # Tab 4: ITAudit (Domain Admission)
+        self.itaudit_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.itaudit_frame, text='ITAudit')
+        self.create_itaudit_tab(self.itaudit_frame)
+        
+        # Tab 5: SOC ADOps
+        self.adops_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.adops_frame, text='ADOps')
+        self.create_adops_tab(self.adops_frame)
+
+        # Tab 6: PM Logs
+        self.pm_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.pm_frame, text='PM Logs')
+        self.create_pmlogs_tab(self.pm_frame)
+        
+        # Tab 7: LDAP Gen
+        self.ldap_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.ldap_frame, text='LDAP Gen')
+        self.create_ldapgen_tab(self.ldap_frame)
+        
+        # Tab 8: I-Mrk (Markdown Converter)
+        self.imrk_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.imrk_frame, text='I-Mrk')
+        self.create_imrk_tab(self.imrk_frame)
         
         # Initialize Logic Engines
         self.norm_engine = comparator.NormalizationEngine()
@@ -131,10 +172,53 @@ class SeparatorGUI:
 
     def save_settings(self):
         try:
+            # Create a clean copy for saving to disk
+            config_to_save = copy.deepcopy(self.custom_config)
+            
+            # Remove proxy password if it exists
+            if 'proxy' in config_to_save:
+                if 'password' in config_to_save['proxy']:
+                    del config_to_save['proxy']['password']
+            
             with open(self.config_file, 'w') as f:
-                json.dump(self.custom_config, f, indent=4)
+                json.dump(config_to_save, f, indent=4)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save settings: {e}")
+
+    def add_full_copy_functionality(self, tree):
+        """
+        Adds Ctrl+C and Right-Click Copy support to a Treeview.
+        """
+        def copy_selection(event=None):
+            selected_items = tree.selection()
+            if not selected_items: return
+            
+            rows = []
+            for item in selected_items:
+                values = tree.item(item)['values']
+                # Convert values to string representation
+                rows.append(" | ".join(map(str, values)))
+            
+            text_to_copy = "\n".join(rows)
+            if text_to_copy:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(text_to_copy)
+                
+        # Bind Ctrl+C
+        tree.bind("<Control-c>", copy_selection)
+        
+        # Context Menu
+        menu = tk.Menu(tree, tearoff=0)
+        menu.add_command(label="Copy Selected", command=copy_selection)
+        
+        def show_menu(event):
+            if tree.selection():
+                menu.post(event.x_root, event.y_root)
+                
+        if os.name == 'nt':
+            tree.bind("<Button-3>", show_menu)
+        else:
+            tree.bind("<Button-2>", show_menu) # Mac/Linux potentially
 
     def toggle_theme(self):
         self.current_theme = 'dark' if self.current_theme == 'light' else 'light'
@@ -159,7 +243,7 @@ class SeparatorGUI:
         style.configure('Secondary.TButton', background=c['secondary_bg'], foreground=c['fg'])
         
         # Text widgets
-        text_widgets = [self.sep_input, self.sep_output, self.input_a, self.input_b, self.host_input]
+        text_widgets = [self.sep_input, self.sep_output, self.input_a, self.input_b, self.host_input, self.ldap_input, self.ldap_output]
         for w in text_widgets:
             w.configure(bg=c['input_bg'], fg=c['input_fg'], insertbackground=c['primary'])
             
@@ -195,11 +279,6 @@ class SeparatorGUI:
         
         ttk.Checkbutton(opt_frame, text="VirusTotal", variable=self.var_vt).pack(side='left', padx=10)
         ttk.Checkbutton(opt_frame, text="AbuseIPDB", variable=self.var_abuse).pack(side='left', padx=10)
-        
-        # Proxy Settings Button (v1.3 Enhancement: Modal)
-        ttk.Button(opt_frame, text="Proxy Settings", command=self.open_proxy_modal, style='Secondary.TButton').pack(side='right', padx=(5, 15))
-        # API Settings Button
-        ttk.Button(opt_frame, text="API Settings", command=self.open_api_modal, style='Secondary.TButton').pack(side='right', padx=5)
         
         # 4. Progress Section
         self.prog_frame = ttk.Frame(main_frame)
@@ -323,7 +402,7 @@ class SeparatorGUI:
     def open_api_modal(self):
         dlg = tk.Toplevel(self.root)
         dlg.title("API Configuration")
-        dlg.geometry("400x250")
+        dlg.geometry("420x300")
         dlg.transient(self.root)
         dlg.grab_set()
 
@@ -342,16 +421,43 @@ class SeparatorGUI:
         e_abuse = tk.Entry(f, width=40, show="*"); e_abuse.grid(row=3, column=0, pady=5)
         e_abuse.insert(0, keys.get('abuse_key', ''))
 
+        ttk.Label(f, text="Google Maps API Key:").grid(row=4, column=0, pady=5, sticky='w')
+        e_gmaps = tk.Entry(f, width=40, show="*"); e_gmaps.grid(row=5, column=0, pady=5)
+        e_gmaps.insert(0, keys.get('gmaps_key', ''))
+
+        # Email Settings
+        ttk.Label(f, text="--- Email Settings ---", font=('Arial', 9, 'bold')).grid(row=6, column=0, pady=(10, 5), sticky='w')
+        
+        email_cfg = self.custom_config.get('email', {})
+        
+        ttk.Label(f, text="SMTP Host:").grid(row=7, column=0, pady=2, sticky='w')
+        e_smtp_host = tk.Entry(f, width=40); e_smtp_host.grid(row=8, column=0, pady=2)
+        e_smtp_host.insert(0, email_cfg.get('host', 'relay.gtbank.com'))
+        
+        ttk.Label(f, text="Sender Email:").grid(row=9, column=0, pady=2, sticky='w')
+        e_sender = tk.Entry(f, width=40); e_sender.grid(row=10, column=0, pady=2)
+        e_sender.insert(0, email_cfg.get('sender', 'security-alerts@gtbank.com'))
+        
+        ttk.Label(f, text="Email Domain:").grid(row=11, column=0, pady=2, sticky='w')
+        e_domain = tk.Entry(f, width=40); e_domain.grid(row=12, column=0, pady=2)
+        e_domain.insert(0, email_cfg.get('domain', 'gtbank.com'))
+
         def save_api():
             self.custom_config['api_keys'] = {
                 'vt_key': e_vt.get().strip(),
-                'abuse_key': e_abuse.get().strip()
+                'abuse_key': e_abuse.get().strip(),
+                'gmaps_key': e_gmaps.get().strip()
+            }
+            self.custom_config['email'] = {
+                'host': e_smtp_host.get().strip(),
+                'sender': e_sender.get().strip(),
+                'domain': e_domain.get().strip()
             }
             self.save_settings()
             dlg.destroy()
-            messagebox.showinfo("Saved", "API Keys saved successfully.")
+            messagebox.showinfo("Saved", "Settings saved successfully.")
 
-        ttk.Button(dlg, text="Save Keys", command=save_api, style='Orange.TButton').pack(pady=10)
+        ttk.Button(dlg, text="Save Settings", command=save_api, style='Orange.TButton').pack(pady=10)
 
     # --- SepRep Logic ---
     
@@ -368,14 +474,11 @@ class SeparatorGUI:
         # 2. Check if Rep Check is ON
         enable_vt = self.var_vt.get()
         enable_abuse = self.var_abuse.get()
+        # v0.3 implies strict VT usage, we consider Rep Mode if either is checked, but engine uses VT.
         enable_rep = enable_vt or enable_abuse
 
-        if enable_rep:
-             # Strict splitting for Rep Check
-             temp = raw.replace('\n', ' ').replace(',', ' ').replace('\t', ' ')
-             tokens = temp.split()
-        else:
-             # Standard Mode
+        if not enable_rep:
+             # Standard Mode (Formatting Only)
              temp = raw.replace('\n', ' ').replace(',', ' ').replace('\t', ' ')
              if ' ' not in temp and len(raw) > 1:
                 tokens = list(raw)
@@ -386,8 +489,8 @@ class SeparatorGUI:
              self.update_output(res)
              return
 
-        # 3. SepRep v2.0 Execution
-        self.update_output(f"Starting SepRep (VT={enable_vt}, Abuse={enable_abuse})...\n")
+        # 3. SepRep v0.3 Execution
+        self.update_output(f"Starting SepRep v0.3 (Engine: VirusTotal)...\n")
         self.progress_var.set(0)
         
         proxy_settings = None
@@ -401,24 +504,24 @@ class SeparatorGUI:
             # Get API Keys
             api_keys = self.custom_config.get('api_keys', {})
             vt_key = api_keys.get('vt_key')
-            abuse_key = api_keys.get('abuse_key')
-
-            checker = reputation.ReputationChecker(vt_key=vt_key, abuse_key=abuse_key, proxy_settings=proxy_settings)
+            
+            # Instantiate SepRep Engine (v0.3 Specification)
+            engine = seprep.SepRepEngine(vt_api_key=vt_key, proxy_settings=proxy_settings)
+            
+            # Strict tokenization
+            temp = raw.replace('\n', ' ').replace(',', ' ').replace('\t', ' ')
+            tokens = temp.split()
             
             total = len(tokens)
             processed = 0
             csv_rows = []
             
-            # Header for CSV (v2.0)
+            # Header (v0.3 Schema)
             csv_rows.append([
-                "Indicator", "Type", 
-                "VT_Score", "VT_Verdict", 
-                "Abuse_Score", "Abuse_Verdict", 
-                "Country", "ISP", "Total_Reports", 
-                "Final_Verdict", "Threat_Category"
+                "Indicator", "Type", "Score", "Classification", "Source", "Error"
             ])
             
-            self.append_output(f"Processing {total} tokens...\n")
+            self.append_output(f"Processing {total} indicators...\n")
 
             for token in tokens:
                 processed += 1
@@ -431,77 +534,56 @@ class SeparatorGUI:
                 # Check
                 self.append_output(f"Checking {token}...")
                 try:
-                    res = checker.check_indicator(token, enable_vt=enable_vt, enable_abuse=enable_abuse)
+                    res = engine.process_item(token)
                     self.append_output(" Done.\n")
                 except Exception as e:
                     self.append_output(f" ERROR: {str(e)}\n")
-                    # Should continue? Yes, try next token.
-                    res = {'indicator': token, 'final_verdict': 'Error', 'type': 'Unknown'}
+                    res = {
+                        "indicator": token,
+                        "indicator_type": "Error",
+                        "reputation_score": 0,
+                        "classification": "Error",
+                        "source": "SepRep",
+                        "error": str(e)
+                    }
 
                 # Extract Data
-                ind_type = res.get('type', 'Unknown')
-                final_verdict = res.get('final_verdict', 'Unknown')
-                
-                # VT Data
-                vt_data = res.get('vt', {})
-                vt_score = vt_data.get('malicious_score', '-')
-                vt_verdict = vt_data.get('reputation', '-')
-                vt_threat = vt_data.get('threat_category', 'Unknown')
-                if "error" in vt_data: vt_verdict = f"Error: {vt_data.get('error')}"
-                
-                # AbuseIPDB Data
-                ab_data = res.get('abuseip', {})
-                ab_score = ab_data.get('score', '-')
-                ab_verdict = ab_data.get('reputation', '-')
-                ab_country = ab_data.get('country', '-')
-                ab_isp = ab_data.get('isp', '-')
-                ab_reports = ab_data.get('total_reports', '-')
-                if "error" in ab_data: ab_verdict = f"Error: {ab_data.get('error')}"
+                ind = res.get('indicator', token)
+                itype = res.get('indicator_type', 'Unknown')
+                score = res.get('reputation_score', 0)
+                cls = res.get('classification', 'Unknown')
+                src = res.get('source', 'Unknown')
+                err = res.get('error', '')
                 
                 # CSV Row
                 csv_rows.append([
-                    token, ind_type, 
-                    str(vt_score), vt_verdict, 
-                    str(ab_score), ab_verdict, 
-                    ab_country, ab_isp, str(ab_reports),
-                    final_verdict, vt_threat
+                    ind, itype, score, cls, src, err
                 ])
                 
-                # Update UI Output (Log style)
-                row_str = f"Result: {token} | {final_verdict}"
-                
-                # Append detailed info or errors
-                if "error" in vt_data:
-                    row_str += f" | VT Error: {vt_data.get('error')}"
+                # Update UI Output
+                if err:
+                    row_str = f"Result: {ind} | {cls} | Error: {err}"
                 else:
-                    row_str += f" | VT:{vt_score}"
-                    if vt_threat != 'Unknown':
-                         row_str += f" ({vt_threat})"
-                    
-                if "error" in ab_data:
-                    row_str += f" | AB Error: {ab_data.get('error')}"
-                else:
-                    row_str += f" | AB:{ab_score}"
+                    row_str = f"Result: {ind} | {itype} | {cls} (Score: {score})"
 
                 # Determine Color Tag
                 tag = 'grey'
-                if final_verdict == 'Malicious':
+                if cls == 'Malicious':
                     tag = 'red'
-                elif final_verdict == 'Safe':
+                elif cls == 'Safe':
                     tag = 'green'
+                elif cls == 'Suspicious':
+                    tag = 'red'
                 
                 self.append_output(row_str + "\n", tag=tag)
                 
-                # Rate Limit Delay (VT=15s, AbuseOnly=1s)
-                if processed < total:
-                    if enable_vt:
-                        time.sleep(15)
-                    else:
-                        time.sleep(1) # Polite delay for AbuseIPDB
+                # Rate Limit Delay (v0.3: rate_limit_safe=true)
+                if processed < total and src == "VirusTotal":
+                    time.sleep(15) 
 
             self.lbl_progress.configure(text="Completed")
             
-            # Auto-Export CSV (v2.0)
+            # Auto-Export CSV
             self.auto_export_csv(csv_rows)
             
         except Exception as global_e:
@@ -609,6 +691,8 @@ class SeparatorGUI:
         
         # Secondary Actions
         ttk.Separator(action_container, orient='horizontal').pack(fill='x', pady=10)
+        self.btn_ping = ttk.Button(action_container, text="Ping Assets", command=self.run_host_ping_threaded, style='Secondary.TButton', state='disabled')
+        self.btn_ping.pack(fill='x', pady=5)
         ttk.Button(action_container, text="Export JSON", command=self.export_host_json, style='Secondary.TButton').pack(fill='x', pady=5)
         ttk.Button(action_container, text="Export CSV", command=self.export_host_csv, style='Secondary.TButton').pack(fill='x', pady=5)
 
@@ -617,25 +701,34 @@ class SeparatorGUI:
         self.host_paned.add(self.p3_frame, weight=2)
         
         # Treeview
-        cols = ('type', 'host', 'ip', 'source', 'status')
+        cols = ('type', 'host', 'ip', 'source', 'status', 'ping')
         self.host_tree = ttk.Treeview(self.p3_frame, columns=cols, show='headings')
         self.host_tree.heading('type', text='Asset Type')
         self.host_tree.heading('host', text='Hostname')
         self.host_tree.heading('ip', text='IP Address')
         self.host_tree.heading('source', text='Source')
         self.host_tree.heading('status', text='Lookup Status')
+        self.host_tree.heading('ping', text='Ping')
         
         self.host_tree.column('type', width=80)
         self.host_tree.column('host', width=150)
         self.host_tree.column('ip', width=120)
         self.host_tree.column('source', width=80)
         self.host_tree.column('status', width=100)
+        self.host_tree.column('ping', width=100, anchor='center')
+        
+        self.host_tree.tag_configure('alive', foreground='green')
+        self.host_tree.tag_configure('dead', foreground='red')
+        self.host_tree.tag_configure('error', foreground='orange')
         
         scrollbar = ttk.Scrollbar(self.p3_frame, orient="vertical", command=self.host_tree.yview)
         self.host_tree.configure(yscrollcommand=scrollbar.set)
         
         self.host_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
         scrollbar.pack(side='right', fill='y')
+        
+        # Add Copy Functionality
+        self.add_full_copy_functionality(self.host_tree)
 
         # Logic State
         self.host_normalized_cache = []
@@ -660,6 +753,7 @@ class SeparatorGUI:
         self.host_state = "raw"
         self.host_normalized_cache = []
         self.btn_lookup.configure(state='disabled') # Disable lookup
+        self.btn_ping.configure(state='disabled') # Disable ping
         # Clear tree
         for item in self.host_tree.get_children():
             self.host_tree.delete(item)
@@ -692,7 +786,7 @@ class SeparatorGUI:
             atype, host, ip = result
             
             # Insert into Tree
-            self.host_tree.insert('', 'end', iid=str(len(self.host_parsed_data)), values=(atype, host, ip, "Derived", "Pending"))
+            self.host_tree.insert('', 'end', iid=str(len(self.host_parsed_data)), values=(atype, host, ip, "Derived", "Pending", "Wait"))
             
             self.host_parsed_data.append({
                 "type": atype,
@@ -700,13 +794,16 @@ class SeparatorGUI:
                 "ip": ip,
                 "source": "Derived",
                 "status": "Pending",
+                "ping_status": "Wait",
                 "id": str(len(self.host_parsed_data))
             })
 
         if self.host_parsed_data:
              self.btn_lookup.configure(state='normal')
+             self.btn_ping.configure(state='normal')
         else:
              self.btn_lookup.configure(state='disabled')
+             self.btn_ping.configure(state='disabled')
 
     def run_host_lookup_threaded(self):
         self.btn_lookup.configure(state='disabled') # Prevent double click
@@ -745,7 +842,7 @@ class SeparatorGUI:
         if not iid: return
         
         # update values
-        # values=(atype, host, ip, source, status)
+        # values=(atype, host, ip, source, status, ping)
         curr = self.host_tree.item(iid)['values']
         # curr is a tuple/list.
         
@@ -755,15 +852,51 @@ class SeparatorGUI:
         # ip updated
         # source stays same
         # status updated
+        # ping updated
         
+        # Ensure we don't crash if ping column is magically missing from curr length
+        ping_val = item.get('ping_status', curr[5] if len(curr) > 5 else "Wait")
+        
+        tags = ()
+        if "alive" in ping_val.lower():
+            tags = ('alive',)
+        elif "dead" in ping_val.lower() or "error" in ping_val.lower():
+            tags = ('dead',)
+            
         new_vals = (
             curr[0], 
             item.get('hostname', ''), 
             item.get('ip', ''), 
             curr[3], 
-            item.get('status', 'Unknown')
+            item.get('status', 'Unknown'),
+            ping_val
         )
-        self.host_tree.item(iid, values=new_vals)
+        self.host_tree.item(iid, values=new_vals, tags=tags)
+
+    def run_host_ping_threaded(self):
+        self.btn_ping.configure(state='disabled')
+        self.lbl_status.configure(text="Running Ping check...", foreground='orange')
+        t = threading.Thread(target=self.run_host_ping)
+        t.start()
+
+    def run_host_ping(self):
+        try:
+             engine = ping_engine.PingEngine()
+             to_ping = self.host_parsed_data
+             
+             def callback(res_item):
+                 self.root.after(0, self.update_host_row, res_item)
+                 
+             results = engine.ping_batch(to_ping, callback=callback)
+             self.host_parsed_data = results
+             
+             self.root.after(0, lambda: self.lbl_status.configure(text="Ping Completed", foreground='green'))
+             self.root.after(0, lambda: self.btn_ping.configure(state='normal'))
+             
+        except Exception as e:
+             print(f"Ping Error: {e}")
+             self.root.after(0, lambda: self.lbl_status.configure(text="Ping Error", foreground='red'))
+             self.root.after(0, lambda: self.btn_ping.configure(state='normal'))
 
     def export_host_csv(self):
         if not getattr(self, 'host_parsed_data', None):
@@ -776,7 +909,7 @@ class SeparatorGUI:
         try:
             with open(f, 'w', newline='', encoding='utf-8') as csvfile:
                 fieldnames = ['type', 'hostname', 'ip', 'source', 'status']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction='ignore')
                 writer.writeheader()
                 writer.writerows(self.host_parsed_data)
             messagebox.showinfo("Success", "Export successful.")
@@ -913,6 +1046,9 @@ class SeparatorGUI:
         tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         
+        # Add Copy Functionality
+        self.add_full_copy_functionality(tree)
+        
         # Initialize with correct columns based on default state
         mode = "detailed" if self.var_mark_onboarded.get() else "simple"
         self.configure_tree_columns(tree, mode)
@@ -1028,20 +1164,25 @@ class SeparatorGUI:
         return parsed
 
     def normalize_inputs(self):
-        # Parse and re-format inputs to standard "Hostname | IP" format
-        raw_a = self.input_a.get("1.0", tk.END)
-        parsed_a = self.parse_input(raw_a)
-        lines_a = [f"{p['hostname']} | {p['ip_or_hash']}" if p['hostname'] else p['ip_or_hash'] for p in parsed_a]
-        self.input_a.delete("1.0", tk.END)
-        self.input_a.insert("1.0", "\n".join(lines_a))
-        
-        raw_b = self.input_b.get("1.0", tk.END)
-        parsed_b = self.parse_input(raw_b)
-        lines_b = [f"{p['hostname']} | {p['ip_or_hash']}" if p['hostname'] else p['ip_or_hash'] for p in parsed_b]
-        self.input_b.delete("1.0", tk.END)
-        self.input_b.insert("1.0", "\n".join(lines_b))
-        
-        self.update_counts()
+        try:
+            # Parse and re-format inputs using main.normalize_and_merge for smart deduplication
+            
+            # Input A
+            raw_a = self.input_a.get("1.0", tk.END)
+            lines_a = main.normalize_and_merge(raw_a)
+            self.input_a.delete("1.0", tk.END)
+            self.input_a.insert("1.0", "\n".join(lines_a))
+            
+            # Input B
+            raw_b = self.input_b.get("1.0", tk.END)
+            lines_b = main.normalize_and_merge(raw_b)
+            self.input_b.delete("1.0", tk.END)
+            self.input_b.insert("1.0", "\n".join(lines_b))
+            
+            self.update_counts()
+        except Exception as e:
+            print(f"Error checking normalization: {e}")
+            messagebox.showerror("Normalization Error", f"Failed to normalize inputs: {e}")
 
     def compare_inputs(self):
         try:
@@ -1189,8 +1330,8 @@ class SeparatorGUI:
         current_tab_index = self.res_notebook.index(self.res_notebook.select())
         if current_tab_index == 0: return self.tree_common, "common"
         if current_tab_index == 1: return self.tree_combined, "combined"
-        if current_tab_index == 2: return self.tree_unique_a, "unique_a"
-        if current_tab_index == 3: return self.tree_unique_b, "unique_b"
+        if current_tab_index == 2: return self.tree_unique_a, "unique_to_a"
+        if current_tab_index == 3: return self.tree_unique_b, "unique_to_b"
         return None, None
 
     def copy_all_result(self):
@@ -1300,9 +1441,727 @@ class SeparatorGUI:
         
         self.root.wait_window(dialog)
 
+    # --- ADOps Logic ---
+    def create_adops_tab(self, parent):
+        self.adops_paned = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
+        self.adops_paned.pack(fill='both', expand=True, padx=10, pady=10)
 
+        # Panel 1: Input
+        self.adops_p1 = ttk.Labelframe(self.adops_paned, text="AD Targets Input")
+        self.adops_paned.add(self.adops_p1, weight=1)
+        
+        ttk.Label(self.adops_p1, text="Paste target names (Users/Computers/Groups):", font=('Arial', 9)).pack(anchor='w', padx=5, pady=2)
+        
+        self.adops_input = scrolledtext.ScrolledText(self.adops_p1, height=20, width=30)
+        self.adops_input.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        ttk.Button(self.adops_p1, text="Clear", command=lambda: self.adops_input.delete("1.0", tk.END), style='Secondary.TButton').pack(anchor='e', padx=5, pady=5)
 
+        # Panel 2: Actions
+        self.adops_p2 = ttk.Frame(self.adops_paned)
+        self.adops_paned.add(self.adops_p2, weight=0)
+        
+        action_container = ttk.Frame(self.adops_p2, padding=10)
+        action_container.pack(fill='both', expand=True, anchor='center')
+        
+        ttk.Label(action_container, text="Target Types", font=('Arial', 10, 'bold')).pack(pady=(0, 5))
+    
+        self.adops_target_computers = tk.BooleanVar(value=True)
+        self.adops_target_users = tk.BooleanVar(value=False)
+        self.adops_target_groups = tk.BooleanVar(value=False)
+        
+        ttk.Checkbutton(action_container, text="Computers", variable=self.adops_target_computers).pack(anchor='w', pady=2)
+        ttk.Checkbutton(action_container, text="Users", variable=self.adops_target_users).pack(anchor='w', pady=2)
+        ttk.Checkbutton(action_container, text="Groups", variable=self.adops_target_groups).pack(anchor='w', pady=2)
 
+        ttk.Separator(action_container, orient='horizontal').pack(fill='x', pady=10)
+        
+        self.btn_adops_query = ttk.Button(action_container, text="Run AD Query", command=self.run_adops_query_threaded, style='Orange.TButton')
+        self.btn_adops_query.pack(fill='x', pady=5)
+        
+        self.adops_status_var = tk.StringVar(value="Ready")
+        self.lbl_adops_status = ttk.Label(action_container, textvariable=self.adops_status_var, foreground='gray', font=('Arial', 9, 'italic'))
+        self.lbl_adops_status.pack(pady=10)
+        
+        ttk.Separator(action_container, orient='horizontal').pack(fill='x', pady=10)
+        ttk.Button(action_container, text="Export JSON", command=self.export_adops_json, style='Secondary.TButton').pack(fill='x', pady=5)
+        ttk.Button(action_container, text="Export CSV", command=self.export_adops_csv, style='Secondary.TButton').pack(fill='x', pady=5)
+
+        # Panel 3: Results
+        self.adops_p3 = ttk.Labelframe(self.adops_paned, text="AD Results")
+        self.adops_paned.add(self.adops_p3, weight=2)
+        
+        self.adops_tree = ttk.Treeview(self.adops_p3, show='headings')
+        scrollbar = ttk.Scrollbar(self.adops_p3, orient="vertical", command=self.adops_tree.yview)
+        self.adops_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.adops_tree.pack(side='left', fill='both', expand=True, padx=5, pady=5)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.add_full_copy_functionality(self.adops_tree)
+        self.adops_data = []
+
+    def set_adops_tree_columns(self, target_types):
+        self.adops_tree.delete(*self.adops_tree.get_children())
+        
+        # Universal columns
+        cols = ['Type', 'Target', 'Status', 'Name', 'Enabled']
+        
+        if "Users" in target_types:
+            cols.extend(['SamAccountName', 'PasswordLastSet', 'Description', 'MemberOf'])
+        if "Computers" in target_types:
+            for c in ['IPv4Address', 'OperatingSystem']:
+                if c not in cols: cols.append(c)
+        if "Groups" in target_types:
+            for c in ['GroupCategory', 'GroupScope', 'Description']:
+                if c not in cols: cols.append(c)
+        
+        # LastLogonDate is common to Users/Computers
+        if "Users" in target_types or "Computers" in target_types:
+             cols.append('LastLogonDate')
+             
+        # Dedup cols just in case while preserving order
+        seen = set()
+        final_cols = []
+        for c in cols:
+            if c not in seen:
+                final_cols.append(c)
+                seen.add(c)
+                
+        self.adops_tree.configure(columns=final_cols)
+        for col in final_cols:
+            self.adops_tree.heading(col, text=col)
+            width = 120
+            if col in ('Description', 'OperatingSystem', 'MemberOf'): width = 200
+            elif col in ('Status', 'Type'): width = 80
+            self.adops_tree.column(col, width=width)
+
+    def run_adops_query_threaded(self):
+        raw = self.adops_input.get("1.0", tk.END).strip()
+        if not raw:
+            return
+            
+        items = [i.strip() for i in raw.replace(',', '\n').split('\n') if i.strip()]
+        if not items: return
+        
+        active_types = []
+        if self.adops_target_computers.get(): active_types.append("Computers")
+        if self.adops_target_users.get(): active_types.append("Users")
+        if self.adops_target_groups.get(): active_types.append("Groups")
+            
+        if not active_types:
+            messagebox.showerror("Error", "Please select at least one Target Type.")
+            return
+            
+        self.set_adops_tree_columns(active_types)
+        
+        self.btn_adops_query.configure(state='disabled')
+        types_str = "/".join(active_types)
+        self.lbl_adops_status.configure(text=f"Querying {len(items)} items across {types_str}...", foreground='orange')
+        
+        t = threading.Thread(target=self.run_adops_query, args=(active_types, items))
+        t.start()
+
+    def run_adops_query(self, active_types, items):
+        try:
+             engine = ad_engine.ADEngine()
+             self.adops_data = []
+             
+             def callback(res_item):
+                 self.adops_data.append(res_item)
+                 # res_item contains its specific target_type which appending logic needs.
+                 self.root.after(0, self.append_adops_row, res_item.get('Type', 'Unknown'), res_item)
+                 
+             engine.query_batch(active_types, items, callback=callback)
+             
+             self.root.after(0, lambda: self.lbl_adops_status.configure(text="Query Completed", foreground='green'))
+             self.root.after(0, lambda: self.btn_adops_query.configure(state='normal'))
+             
+        except Exception as e:
+             print(f"ADOps Error: {e}")
+             self.root.after(0, lambda: self.lbl_adops_status.configure(text="Query Error", foreground='red'))
+             self.root.after(0, lambda: self.btn_adops_query.configure(state='normal'))
+
+    def append_adops_row(self, ttype, item):
+        trg = item.get("Target", "")
+        status = item.get("Status", "Unknown")
+        details = item.get("Details", {})
+        
+        current_cols = self.adops_tree["columns"]
+        vals = []
+        
+        for col in current_cols:
+            if col == 'Type':
+                vals.append(ttype)
+            elif col == 'Target':
+                vals.append(trg)
+            elif col == 'Status':
+                vals.append(status)
+            elif status == "Success" and isinstance(details, dict):
+                # Map detail properties dynamically by column string
+                if col == 'Enabled':
+                    vals.append(str(details.get(col, "")))
+                elif col == 'MemberOf':
+                    # MemberOf might be a list or a single string
+                    mo = details.get('MemberOf', "")
+                    if isinstance(mo, list):
+                         # Extract just the CN for readability
+                         mo_clean = [m.split(',')[0].replace('CN=', '') for m in mo]
+                         vals.append("; ".join(mo_clean))
+                    else:
+                         vals.append(str(mo))
+                else:
+                    vals.append(str(details.get(col, "")))
+            else:
+                # If error, place details string in 'Name' col and blank others
+                if col == 'Name' and isinstance(details, str):
+                    vals.append(details)
+                else:
+                    vals.append("")
+                
+        self.adops_tree.insert('', 'end', iid=f"adops_{item['id']}", values=vals)
+
+    def export_adops_csv(self):
+        if not self.adops_data:
+            messagebox.showinfo("Info", "No ADOps data to export.")
+            return
+        f = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV Files", "*.csv")])
+        if not f: return
+        try:
+            with open(f, 'w', newline='', encoding='utf-8') as csvfile:
+                cols = self.adops_tree["columns"]
+                writer = csv.writer(csvfile)
+                writer.writerow(cols)
+                
+                for item in self.adops_tree.get_children():
+                    row = self.adops_tree.item(item)['values']
+                    writer.writerow(row)
+            messagebox.showinfo("Export Successful", f"Saved to {f}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
+
+    def export_adops_json(self):
+        if not self.adops_data:
+            messagebox.showinfo("Info", "No ADOps data to export.")
+            return
+        f = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Files", "*.json")])
+        if not f: return
+        try:
+            with open(f, 'w', encoding='utf-8') as jsonfile:
+                json.dump(self.adops_data, jsonfile, indent=4)
+            messagebox.showinfo("Export Successful", f"Saved to {f}")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
+
+    # --- ITAudit Logic ---
+    def create_itaudit_tab(self, parent):
+        import logging
+        from itaudit_engine.utils import logger
+        
+        # Inputs Frame
+        inputs_frame = ttk.Labelframe(parent, text="Report Inputs")
+        inputs_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(inputs_frame, text="System Joined CSV:").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.audit_joined_var = tk.StringVar()
+        ttk.Entry(inputs_frame, textvariable=self.audit_joined_var, width=50).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(inputs_frame, text="Browse", command=lambda: self.browse_audit_file(self.audit_joined_var), style='Secondary.TButton').grid(row=0, column=2, padx=5, pady=5)
+        
+        ttk.Label(inputs_frame, text="Host Inventory CSV:").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.audit_inv_var = tk.StringVar()
+        ttk.Entry(inputs_frame, textvariable=self.audit_inv_var, width=50).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(inputs_frame, text="Browse", command=lambda: self.browse_audit_file(self.audit_inv_var), style='Secondary.TButton').grid(row=1, column=2, padx=5, pady=5)
+        
+        # Actions
+        action_frame = ttk.Frame(parent)
+        action_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.btn_audit_gen = ttk.Button(action_frame, text="Generate Report", command=self.run_itaudit_threaded, style='Orange.TButton')
+        self.btn_audit_gen.pack(side='left', padx=5)
+        ttk.Button(action_frame, text="Reset", command=self.reset_itaudit, style='Secondary.TButton').pack(side='left', padx=5)
+        self.btn_audit_open = ttk.Button(action_frame, text="Open Report Folder", command=self.open_audit_folder, style='Secondary.TButton', state='disabled')
+        self.btn_audit_open.pack(side='right', padx=5)
+        
+        # Logs
+        log_frame = ttk.Labelframe(parent, text="Diagnostics & Logs")
+        log_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        self.audit_log_box = scrolledtext.ScrolledText(log_frame, state='disabled', font=('Courier', 9))
+        self.audit_log_box.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Attach logger
+        class TkinterLogHandler(logging.Handler):
+            def __init__(self, text_widget):
+                super().__init__()
+                self.text_widget = text_widget
+            def emit(self, record):
+                msg = self.format(record)
+                self.text_widget.configure(state='normal')
+                self.text_widget.insert('end', msg + '\n')
+                self.text_widget.see('end')
+                self.text_widget.configure(state='disabled')
+                
+        handler = TkinterLogHandler(self.audit_log_box)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+        self.audit_last_report = None
+
+    def browse_audit_file(self, string_var):
+        f = filedialog.askopenfilename(filetypes=[("CSV Files", "*.csv")])
+        if f: string_var.set(f)
+        
+    def reset_itaudit(self):
+        self.audit_joined_var.set("")
+        self.audit_inv_var.set("")
+        self.audit_log_box.configure(state='normal')
+        self.audit_log_box.delete("1.0", tk.END)
+        self.audit_log_box.configure(state='disabled')
+        self.btn_audit_open.configure(state='disabled')
+        self.btn_audit_gen.configure(state='normal')
+
+    def open_audit_folder(self):
+        if self.audit_last_report and os.path.exists(os.path.dirname(self.audit_last_report)):
+            os.startfile(os.path.dirname(self.audit_last_report))
+
+    def run_itaudit_threaded(self):
+        j_path = self.audit_joined_var.get()
+        i_path = self.audit_inv_var.get()
+        if not j_path or not i_path:
+            messagebox.showerror("Error", "Please select both System Joined CSV and Host Inventory CSV.")
+            return
+            
+        self.btn_audit_gen.configure(state='disabled')
+        self.audit_log_box.configure(state='normal')
+        self.audit_log_box.delete("1.0", tk.END)
+        self.audit_log_box.configure(state='disabled')
+        
+        t = threading.Thread(target=self.run_itaudit, args=(j_path, i_path))
+        t.start()
+        
+    def run_itaudit(self, j_path, i_path):
+        try:
+            from itaudit_engine.main import process_pipeline
+            output = process_pipeline(j_path, i_path)
+            self.audit_last_report = output
+            self.root.after(0, lambda: messagebox.showinfo("Success", f"Report generated:\n{output}"))
+            self.root.after(0, lambda: self.btn_audit_open.configure(state='normal'))
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Audit failed:\n{str(e)}"))
+        finally:
+            self.root.after(0, lambda: self.btn_audit_gen.configure(state='normal'))
+
+    # --- PM Logs Logic ---
+    def create_pmlogs_tab(self, parent):
+        # Inputs Frame
+        inputs_frame = ttk.Labelframe(parent, text="Report Inputs")
+        inputs_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Label(inputs_frame, text="PM_LOG_FORWARDING File (.xlsx/.csv):").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.pmlogs_file_var = tk.StringVar()
+        ttk.Entry(inputs_frame, textvariable=self.pmlogs_file_var, width=50).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(inputs_frame, text="Browse", command=self.browse_pmlogs_file, style='Secondary.TButton').grid(row=0, column=2, padx=5, pady=5)
+        
+        ttk.Label(inputs_frame, text="Segment XML File (.xml):").grid(row=1, column=0, padx=5, pady=5, sticky='e')
+        self.pmlogs_xml_var = tk.StringVar()
+        ttk.Entry(inputs_frame, textvariable=self.pmlogs_xml_var, width=50).grid(row=1, column=1, padx=5, pady=5)
+        ttk.Button(inputs_frame, text="Browse", command=self.browse_pmlogs_xml, style='Secondary.TButton').grid(row=1, column=2, padx=5, pady=5)
+
+        # Analysis Options
+        opts_frame = ttk.Labelframe(parent, text="Analysis Options")
+        opts_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.pm_enable_abuse = tk.BooleanVar(value=True)
+        self.pm_enable_geo = tk.BooleanVar(value=True)
+        self.pm_segments_only = tk.BooleanVar(value=False)
+        self.pm_summarize_switches = tk.BooleanVar(value=True)
+        
+        self.cb_pm_abuse = ttk.Checkbutton(opts_frame, text="Enable AbuseIPDB Reputation Check", variable=self.pm_enable_abuse)
+        self.cb_pm_abuse.pack(side='left', padx=10)
+        self.cb_pm_geo = ttk.Checkbutton(opts_frame, text="Enable Geolocation & Impossible Travel", variable=self.pm_enable_geo)
+        self.cb_pm_geo.pack(side='left', padx=10)
+        
+        def toggle_segments_only():
+            if self.pm_segments_only.get():
+                self.cb_pm_abuse.configure(state='disabled')
+                self.cb_pm_geo.configure(state='disabled')
+            else:
+                self.cb_pm_abuse.configure(state='normal')
+                self.cb_pm_geo.configure(state='normal')
+                
+        self.cb_pm_segments_only = ttk.Checkbutton(opts_frame, text="Segments Only (No Internet)", variable=self.pm_segments_only, command=toggle_segments_only)
+        self.cb_pm_segments_only.pack(side='left', padx=10)
+        
+        # Switch Detail mode toggle
+        self.cb_pm_summarize = ttk.Checkbutton(opts_frame, text="Summarize Switch Details", variable=self.pm_summarize_switches)
+        self.cb_pm_summarize.pack(side='left', padx=10)
+        
+
+        # Actions
+        action_frame = ttk.Frame(parent)
+        action_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.btn_pmlogs_run = ttk.Button(action_frame, text="Run Validator", command=self.run_pmlogs_threaded, style='Orange.TButton')
+        self.btn_pmlogs_run.pack(side='left', padx=5)
+        
+        self.btn_pm_dispatch = ttk.Button(action_frame, text="Dispatch Emails", command=self.run_pm_dispatch_threaded, style='Secondary.TButton', state='disabled')
+        self.btn_pm_dispatch.pack(side='left', padx=5)
+        
+        ttk.Button(action_frame, text="Reset", command=self.reset_pmlogs, style='Secondary.TButton').pack(side='left', padx=5)
+        
+        # Progress and Status
+        self.pm_prog_frame = ttk.Frame(parent, padding=(10, 0))
+        self.pm_prog_frame.pack(fill='x')
+        
+        self.pm_progress_var = tk.DoubleVar()
+        self.pm_progress_bar = ttk.Progressbar(self.pm_prog_frame, variable=self.pm_progress_var, maximum=100)
+        self.pm_progress_bar.pack(fill='x', side='left', expand=True)
+        
+        self.pmlogs_status_var = tk.StringVar(value="Ready")
+        ttk.Label(self.pm_prog_frame, textvariable=self.pmlogs_status_var, font=('Arial', 9, 'italic')).pack(side='left', padx=10)
+        
+        self.pm_last_results = None
+
+    def browse_pmlogs_file(self):
+        f = filedialog.askopenfilename(filetypes=[("Excel/CSV Files", "*.xlsx *.xls *.csv")])
+        if f: self.pmlogs_file_var.set(f)
+
+    def browse_pmlogs_xml(self):
+        f = filedialog.askopenfilename(filetypes=[("XML Files", "*.xml")])
+        if f: self.pmlogs_xml_var.set(f)
+
+    def reset_pmlogs(self):
+        self.pmlogs_file_var.set("")
+        self.pmlogs_xml_var.set("")
+        self.pmlogs_status_var.set("Ready")
+        self.pm_progress_var.set(0)
+        self.btn_pmlogs_run.configure(state='normal')
+
+    def run_pmlogs_threaded(self):
+        f_path = self.pmlogs_file_var.get()
+        if not f_path:
+            messagebox.showerror("Error", "Please select a PM Log file.")
+            return
+            
+        self.btn_pmlogs_run.configure(state='disabled')
+        self.pmlogs_status_var.set("Processing Logs... This may take a moment.")
+        
+        t = threading.Thread(target=self.run_pmlogs, args=(f_path,))
+        t.start()
+
+    def run_pmlogs(self, f_path):
+        try:
+            import pm_engine
+            api_keys = self.custom_config.get('api_keys', {})
+            gmaps_key = api_keys.get('gmaps_key', '').strip() or None
+            abuse_key = api_keys.get('abuse_key', '').strip() or None
+            xml_path = self.pmlogs_xml_var.get()
+
+            engine = pm_engine.PMLogEngine(
+                gmaps_api_key=gmaps_key, 
+                abuse_api_key=abuse_key, 
+                proxy_settings=self.proxy_config,
+                segment_xml_path=xml_path if xml_path else None,
+                enable_abuseipdb=self.pm_enable_abuse.get(),
+                enable_geolocation=self.pm_enable_geo.get(),
+                segments_only_mode=self.pm_segments_only.get(),
+                summarize_switch_details=self.pm_summarize_switches.get()
+            )
+            
+            # Progress tracking
+            self.root.after(0, lambda: self.pm_progress_var.set(10))
+            
+            # Extract IPs
+            unique_ips = engine._extract_unique_ips(f_path)
+            self.root.after(0, lambda: self.pm_progress_var.set(20))
+            
+            abuse_by_ip = {}
+            if engine.enable_abuseipdb and abuse_key:
+                self.root.after(0, lambda: self.pmlogs_status_var.set(f"Fetching Reputation (Parallel) for {len(unique_ips)} IPs..."))
+                
+                # Manual parallel check to update progress bar
+                total = len(unique_ips)
+                if total > 0:
+                    from concurrent.futures import ThreadPoolExecutor
+                    processed = 0
+                    with ThreadPoolExecutor(max_workers=10) as executor:
+                        futures = {executor.submit(engine.check_abuseipdb, ip): ip for ip in unique_ips}
+                        for future in futures:
+                            res = future.result()
+                            processed += 1
+                            if res and 'IP' in res:
+                                abuse_by_ip[res['IP']] = res
+                            perc = 20 + (processed / total) * 40 # 20% to 60%
+                            self.root.after(0, lambda p=perc: self.pm_progress_var.set(p))
+                else:
+                    self.root.after(0, lambda: self.pm_progress_var.set(60))
+            else:
+                self.root.after(0, lambda: self.pm_progress_var.set(60))
+
+            # Parse logs
+            self.root.after(0, lambda: self.pmlogs_status_var.set("Analyzing Log Data..."))
+            df, mismatch_data, travel_data, ext_ips = engine.parse_logs(f_path, abuse_by_ip=abuse_by_ip)
+            self.pm_last_results = {
+                'mismatch_data': mismatch_data,
+                'travel_data': travel_data
+            }
+            self.root.after(0, lambda: self.pm_progress_var.set(80))
+            
+            self.root.after(0, lambda: self.pmlogs_status_var.set("Generating Enhanced Report..."))
+            output_path = engine.generate_report(f_path, abuse_by_ip=abuse_by_ip)
+            self.root.after(0, lambda: self.pm_progress_var.set(100))
+            
+            self.root.after(0, lambda: self.pmlogs_status_var.set("Success! Report saved."))
+            self.root.after(0, lambda: self.btn_pm_dispatch.configure(state='normal'))
+            self.root.after(0, lambda: messagebox.showinfo("Success", f"PM Logs Validator completed.\nReport saved to: {output_path}"))
+            
+            self.root.after(0, lambda: self.prompt_open_folder(output_path))
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.root.after(0, lambda: self.pmlogs_status_var.set("Error occurred."))
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to process logs:\n{str(e)}"))
+        finally:
+            self.root.after(0, lambda: self.btn_pmlogs_run.configure(state='normal'))
+
+    def run_pm_dispatch_threaded(self):
+        if not self.pm_last_results:
+            messagebox.showwarning("No Results", "Please run the validator first.")
+            return
+            
+        if messagebox.askyesno("Confirm Dispatch", "Send email alerts to all flagged users? (This will run in DRY RUN mode by default unless configured otherwise)"):
+            self.btn_pm_dispatch.configure(state='disabled')
+            self.pmlogs_status_var.set("Dispatching Emails...")
+            t = threading.Thread(target=self.run_pm_dispatch)
+            t.start()
+
+    def run_pm_dispatch(self):
+        try:
+            email_cfg = self.custom_config.get('email', {})
+            dispatcher = pm_email_dispatcher.PMEmailDispatcher(
+                smtp_host=email_cfg.get('host', 'relay.gtbank.com'),
+                sender_email=email_cfg.get('sender', 'security-alerts@gtbank.com'),
+                email_domain=email_cfg.get('domain', 'gtbank.com'),
+                dry_run=True  # Toolkit always uses dry_run for safety in UI
+            )
+            
+            summary = dispatcher.dispatch_all(
+                self.pm_last_results['mismatch_data'],
+                self.pm_last_results['travel_data']
+            )
+            
+            msg = f"Dispatch completed.\n- Subnet alerts: {summary['subnet_alerts_sent']}\n- Travel alerts: {summary['travel_alerts_sent']}\n- Failed: {len(summary['failed'])}"
+            self.root.after(0, lambda: messagebox.showinfo("Dispatch Summary", msg))
+            self.root.after(0, lambda: self.pmlogs_status_var.set("Dispatch Completed (Dry Run)"))
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Dispatch Error", str(e)))
+        finally:
+            self.root.after(0, lambda: self.btn_pm_dispatch.configure(state='normal'))
+
+    def prompt_open_folder(self, file_path):
+        if messagebox.askyesno("Open Folder", "Would you like to open the output folder?"):
+            os.startfile(os.path.dirname(os.path.abspath(file_path)))
+
+    # --- LDAP Gen Tab ---
+
+    def create_ldapgen_tab(self, parent):
+        main_frame = ttk.Frame(parent, padding=10)
+        main_frame.pack(expand=True, fill='both')
+        
+        # 1. Input Section
+        top_frame = ttk.Frame(main_frame)
+        top_frame.pack(fill='x', pady=(0, 5))
+        
+        ttk.Label(top_frame, text="Username List (one per line):", font=('Arial', 10, 'bold')).pack(side='left')
+        ttk.Button(top_frame, text="Upload Text File", command=lambda: self.upload_text_to_widget(self.ldap_input), style='Secondary.TButton').pack(side='right')
+
+        self.ldap_input = scrolledtext.ScrolledText(main_frame, height=12)
+        self.ldap_input.pack(fill='both', expand=True, pady=(0, 10))
+        
+        # 2. Options Section
+        opt_frame = ttk.LabelFrame(main_frame, text="Configurations", padding=10)
+        opt_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(opt_frame, text="Target Attribute:").pack(side='left', padx=(0, 10))
+        self.ldap_attr_var = tk.StringVar(value="CN")
+        attr_options = ["CN", "sAMAccountName", "userPrincipalName", "displayName", "mail"]
+        self.ldap_attr_cb = ttk.Combobox(opt_frame, textvariable=self.ldap_attr_var, values=attr_options, state='readonly', width=20)
+        self.ldap_attr_cb.pack(side='left')
+        
+        ttk.Label(opt_frame, text="  (Common Name is default)").pack(side='left')
+
+        # 3. Actions
+        btn_frame = ttk.Frame(main_frame, padding=5)
+        btn_frame.pack(fill='x')
+        
+        self.btn_ldap_run = ttk.Button(btn_frame, text="Generate LDAP Filter", command=self.run_ldap_generation, style='Orange.TButton')
+        self.btn_ldap_run.pack(side='left', padx=(0, 10))
+        
+        ttk.Button(btn_frame, text="Clear", command=self.clear_ldapgen, style='Secondary.TButton').pack(side='left')
+
+        # 4. Output Section
+        ttk.Label(main_frame, text="Generated LDAP Filter:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(10, 0))
+        self.ldap_output = scrolledtext.ScrolledText(main_frame, height=8, state='disabled')
+        self.ldap_output.pack(fill='both', expand=True, pady=(5, 10))
+        
+        # 5. Output Actions
+        out_btn_frame = ttk.Frame(main_frame)
+        out_btn_frame.pack(fill='x')
+        
+        ttk.Button(out_btn_frame, text="Copy Filter", command=self.copy_ldap_output, style='Secondary.TButton').pack(side='left', padx=(0, 10))
+        ttk.Button(out_btn_frame, text="Export to File", command=self.export_ldap_filter, style='Secondary.TButton').pack(side='right')
+
+    def upload_text_to_widget(self, widget):
+        file_path = filedialog.askopenfilename(filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+        if not file_path:
+            return
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            widget.delete("1.0", tk.END)
+            widget.insert("1.0", content)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load file: {e}")
+
+    def run_ldap_generation(self):
+        raw = self.ldap_input.get("1.0", tk.END).strip()
+        if not raw:
+            messagebox.showwarning("Empty Input", "Please provide a list of usernames.")
+            return
+            
+        attr = self.ldap_attr_var.get()
+        items = raw.split('\n')
+        
+        try:
+            gen = ldap_engine.LDAPFilterGenerator()
+            res = gen.generate_filter(items, attribute=attr)
+            
+            self.ldap_output.configure(state='normal')
+            self.ldap_output.delete("1.0", tk.END)
+            self.ldap_output.insert("1.0", res)
+            self.ldap_output.configure(state='disabled')
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate filter: {e}")
+
+    def copy_ldap_output(self):
+        s = self.ldap_output.get("1.0", tk.END).strip()
+        if s:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(s)
+            
+    def export_ldap_filter(self):
+        s = self.ldap_output.get("1.0", tk.END).strip()
+        if not s:
+            messagebox.showinfo("Info", "No filter to export.")
+            return
+            
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt", initialfile="ldap_filter.txt", filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+        if file_path:
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(s)
+                messagebox.showinfo("Success", f"Filter exported to:\n{file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export: {e}")
+
+    def clear_ldapgen(self):
+        self.ldap_input.delete("1.0", tk.END)
+        self.ldap_output.configure(state='normal')
+        self.ldap_output.delete("1.0", tk.END)
+        self.ldap_output.configure(state='disabled')
+
+    def create_imrk_tab(self, parent):
+        main_frame = ttk.Frame(parent, padding=10)
+        main_frame.pack(expand=True, fill='both')
+
+        # 1. Input Section
+        ttk.Label(main_frame, text="Raw Text Input:", font=('Arial', 10, 'bold')).pack(anchor='w')
+        self.imrk_input = scrolledtext.ScrolledText(main_frame, height=10)
+        self.imrk_input.pack(fill='both', expand=True, pady=(0, 10))
+
+        # 2. Options Section
+        opt_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
+        opt_frame.pack(fill='x', pady=5)
+
+        self.imrk_llm_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(opt_frame, text="Enable LLM Enrichment", variable=self.imrk_llm_var).pack(side='left', padx=(0, 10))
+
+        ttk.Label(opt_frame, text="Mode:").pack(side='left')
+        self.imrk_mode_var = tk.StringVar(value="documentation")
+        mode_options = ["documentation", "notes", "meeting", "blog"]
+        self.imrk_mode_cb = ttk.Combobox(opt_frame, textvariable=self.imrk_mode_var, values=mode_options, state='readonly', width=15)
+        self.imrk_mode_cb.pack(side='left', padx=5)
+
+        # 3. Actions
+        btn_frame = ttk.Frame(main_frame, padding=5)
+        btn_frame.pack(fill='x')
+
+        ttk.Button(btn_frame, text="Convert to Markdown", command=self.convert_imrk_threaded, style='Orange.TButton').pack(side='left', padx=(0, 10))
+        ttk.Button(btn_frame, text="Clear", command=self.clear_imrk, style='Secondary.TButton').pack(side='left')
+
+        # 4. Output Section
+        ttk.Label(main_frame, text="Formatted Markdown:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(10, 0))
+        self.imrk_output = scrolledtext.ScrolledText(main_frame, height=10, state='disabled')
+        self.imrk_output.pack(fill='both', expand=True, pady=(5, 10))
+
+        # 5. Output Actions
+        out_btn_frame = ttk.Frame(main_frame)
+        out_btn_frame.pack(fill='x')
+
+        ttk.Button(out_btn_frame, text="Copy Output", command=self.copy_imrk_output, style='Secondary.TButton').pack(side='left')
+
+    def convert_imrk_threaded(self):
+        t = threading.Thread(target=self.convert_imrk)
+        t.start()
+
+    def convert_imrk(self):
+        raw_text = self.imrk_input.get("1.0", tk.END).strip()
+        if not raw_text:
+            return
+
+        self.imrk_output.configure(state='normal')
+        self.imrk_output.delete("1.0", tk.END)
+        self.imrk_output.insert("1.0", "Converting...\n")
+        self.imrk_output.configure(state='disabled')
+
+        if self.imrk_llm_var.get():
+            mode = self.imrk_mode_var.get()
+            enhanced = enhance_with_llm(raw_text, mode)
+            if enhanced:
+                self.imrk_output.configure(state='normal')
+                self.imrk_output.delete("1.0", tk.END)
+                self.imrk_output.insert("1.0", enhanced)
+                self.imrk_output.configure(state='disabled')
+                return
+
+        # Fallback / Default
+        chunks = chunk_text(raw_text, method="paragraph")
+        formatted_chunks = []
+        for chunk in chunks:
+            ctype = classify_chunk(chunk)
+            fchunk = format_chunk(chunk, ctype)
+            formatted_chunks.append(fchunk)
+
+        final_md = assemble_document(formatted_chunks)
+
+        self.imrk_output.configure(state='normal')
+        self.imrk_output.delete("1.0", tk.END)
+        self.imrk_output.insert("1.0", final_md)
+        self.imrk_output.configure(state='disabled')
+
+    def clear_imrk(self):
+        self.imrk_input.delete("1.0", tk.END)
+        self.imrk_output.configure(state='normal')
+        self.imrk_output.delete("1.0", tk.END)
+        self.imrk_output.configure(state='disabled')
+
+    def copy_imrk_output(self):
+        s = self.imrk_output.get("1.0", tk.END).strip()
+        if s:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(s)
 
 
 def main_gui():

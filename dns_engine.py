@@ -113,6 +113,7 @@ class DNSLookupEngine:
                 
                 # Context-aware parsing
                 if "Name:" in output:
+                    # Split by "Name:" to ignore the Server/Address header
                     parts = output.split("Name:")
                     if len(parts) > 1:
                         target_part = parts[1]
@@ -120,12 +121,16 @@ class DNSLookupEngine:
                         if ip_matches:
                             return ip_matches[0]
                 
-                # Fallback
-                matches = re.findall(ipv4_regex, output)
-                if len(matches) > 1:
-                    return matches[-1] 
-                elif len(matches) == 1:
-                    return matches[0]
+                # Strict check: If "Name:" is missing, it might be a failure or non-standard output.
+                # We check for known failure strings to avoid returning the Server IP
+                if "Non-existent domain" in output or "can't find" in output:
+                    return None
+                 
+                # Fallback only if it looks like a successful response without "Name:" 
+                # (rare in Windows nslookup, but possible in some envs).
+                # To be safe, we only fallback if we are SURE it's not a failure message.
+                # But safer to return None if we can't parse "Name:" which confirms resolution.
+                return None
                 
         except Exception:
             return None

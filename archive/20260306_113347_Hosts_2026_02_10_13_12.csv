@@ -1,0 +1,3 @@
+﻿Connectivity,Host,IPv4 Address,Segment,Appliance,MAC Address,Comment,Switch IP/FQDN and Port Name,Switch Port Alias,Switch Port Name,Switch Hostname,Display Name,Actions,Function
+Online,GTBANK\IDM01_TSG028,10.2.53.68,IDUMOTA,"gtb-forescout, 10.240.240.66",24fbe349695a,,10.2.53.2:GE1/0/20,,GE1/0/20,Idumota_sw01,Modupeola Bello,Start SecureConnector: Waiting for user to confirm receipt of notification; Send Compliant CEF message: Success; Set Registry Key on Windows: Success; Disable External Device: Success; Virtual Firewall: Pending,Workstation
+Offline,GTBANK\BUR01-MRIT02,10.2.11.106,CATHOLIC MISSION,"gtb-forescout, 10.240.240.66",ecb1d7534c65,,10.2.11.2:GE1/0/16,,GE1/0/16,CATHOLIC MISSION_SWITCH01,Abdulmalik Oshineye,Virtual Firewall: Pending,Workstation

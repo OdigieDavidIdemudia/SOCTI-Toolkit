@@ -1,0 +1,5 @@
+"Username","Target Computer Name (custom)","Event Name","Log Source","Event Count","Start Time","Low Level Category","Source IP","Source Port","Destination IP","Destination Port"
+"gogo.monday","IDM01_TSG028$","Success Audit: A computer account was created","ANGEL","1","9 Feb 2026, 11:28:14","Computer Account Added","10.0.20.222","0","10.0.20.222","0"
+"princewill.goteh","WSE05_TCAPTAIN$","Success Audit: A computer account was created","ANGEL","1","9 Feb 2026, 11:07:35","Computer Account Added","10.0.20.222","0","10.0.20.222","0"
+"cosmas.ogbodo","LAF01_TSU07$","Success Audit: A computer account was created","ANGEL","1","9 Feb 2026, 10:33:47","Computer Account Added","10.0.20.222","0","10.0.20.222","0"
+"abdulmalik.oshineye","BUR01-MRIT02$","Success Audit: A computer account was created","ANGEL","1","9 Feb 2026, 08:58:56","Computer Account Added","10.0.20.222","0","10.0.20.222","0"

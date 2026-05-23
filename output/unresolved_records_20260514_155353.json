@@ -1,0 +1,11 @@
+[
+  {
+    "hostname": "HOST2",
+    "username": "user2",
+    "joined_date": "2025-01-02",
+    "joined_time": "11:00:00",
+    "ip_address": NaN,
+    "mac_address": NaN,
+    "match_status": "unresolved"
+  }
+]

@@ -2,3 +2,5 @@ requests
 Pillow
 pandas
 openpyxl
+geopy
+jinja2
