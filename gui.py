@@ -20,6 +20,7 @@ import copy
 import pm_engine
 import pm_email_dispatcher
 import ldap_engine
+import asset_compliance_checker
 
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'I-Mrk'))
@@ -143,6 +144,21 @@ class SeparatorGUI:
         self.imrk_frame = ttk.Frame(self.notebook)
         self.notebook.add(self.imrk_frame, text='I-Mrk')
         self.create_imrk_tab(self.imrk_frame)
+        
+        # Tab 9: Asset Compliance
+        self.asset_compliance_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.asset_compliance_frame, text='Asset Compliance')
+        self.create_asset_compliance_tab(self.asset_compliance_frame)
+        
+        # Tab 10: MultiDrive
+        self.multi_drive_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.multi_drive_frame, text='MultiDrive')
+        self.create_multi_drive_tab(self.multi_drive_frame)
+        
+        # Tab 11: VPM Reviewer
+        self.vpm_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.vpm_frame, text='VPM Reviewer')
+        self.create_vpm_reviewer_tab(self.vpm_frame)
         
         # Initialize Logic Engines
         self.norm_engine = comparator.NormalizationEngine()
@@ -949,8 +965,7 @@ class SeparatorGUI:
             data = []
             for item in items:
                 v = self.host_tree.item(item)['values']
-                v = self.host_tree.item(item)['values']
-                data.append({"type": v[0], "hostname": v[1], "ip": v[2], "source": v[3], "status": v[4]})
+                data.append({"type": v[0], "hostname": v[1], "ip": v[2]})
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2)
@@ -1027,33 +1042,30 @@ class SeparatorGUI:
         self.res_notebook = ttk.Notebook(parent)
         self.res_notebook.pack(side='top', fill='both', expand=True, padx=10, pady=(0, 5)) 
         
-        self.tab_common, self.tree_common = self.create_result_tree(self.res_notebook, "Common")
-        self.tab_combined, self.tree_combined = self.create_result_tree(self.res_notebook, "Combined")
-        self.tab_unique_a, self.tree_unique_a = self.create_result_tree(self.res_notebook, "Unique to A")
-        self.tab_unique_b, self.tree_unique_b = self.create_result_tree(self.res_notebook, "Unique to B")
+        self.tab_common, self.text_common = self.create_result_text(self.res_notebook, "Common")
+        self.tab_combined, self.text_combined = self.create_result_text(self.res_notebook, "Combined")
+        self.tab_unique_a, self.text_unique_a = self.create_result_text(self.res_notebook, "Unique to A")
+        self.tab_unique_b, self.text_unique_b = self.create_result_text(self.res_notebook, "Unique to B")
 
-    def create_result_tree(self, parent_notebook, title):
+    def create_result_text(self, parent_notebook, title):
         frame = ttk.Frame(parent_notebook)
         frame.pack(fill='both', expand=True)
         
         parent_notebook.add(frame, text=title)
         
-        tree = ttk.Treeview(frame, show='headings')
+        text_widget = scrolledtext.ScrolledText(frame, wrap=tk.NONE, font=('Courier New', 10), state='normal')
+        text_widget.pack(fill='both', expand=True, padx=5, pady=5)
         
-        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=scrollbar.set)
+        def block_edit(event):
+            if event.state & 4 and event.keysym.lower() in ('c', 'a'):
+                return
+            if event.keysym in ('Up', 'Down', 'Left', 'Right', 'Prior', 'Next', 'Home', 'End', 'Shift_L', 'Shift_R', 'Control_L', 'Control_R', 'Alt_L', 'Alt_R'):
+                return
+            return "break"
+            
+        text_widget.bind("<Key>", block_edit)
         
-        tree.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
-        
-        # Add Copy Functionality
-        self.add_full_copy_functionality(tree)
-        
-        # Initialize with correct columns based on default state
-        mode = "detailed" if self.var_mark_onboarded.get() else "simple"
-        self.configure_tree_columns(tree, mode)
-        
-        return frame, tree
+        return frame, text_widget
 
     def upload_file(self, target_widget):
         file_path = filedialog.askopenfilename(filetypes=[("All Supported", "*.txt *.csv *.xlsx *.xls"), ("Excel Files", "*.xlsx *.xls"), ("Text/CSV", "*.txt *.csv")])
@@ -1148,7 +1160,20 @@ class SeparatorGUI:
                         h_out = val
                         i_out = ip
                     else:
-                        i_out = line
+                        # Fallback: check if the line contains multiple comma/space separated IPs
+                        tokens = [t.strip() for t in re.split(r'[,\s;]+', line) if t.strip()]
+                        if len(tokens) > 1:
+                            for t in tokens:
+                                r = main.classify_asset(t)
+                                if r and r[0] == "IPv4":
+                                    parsed.append({'hostname': '', 'ip_or_hash': r[2]})
+                                elif r and r[0] == "Hostname":
+                                    parsed.append({'hostname': r[1], 'ip_or_hash': ''})
+                                else:
+                                    parsed.append({'hostname': '', 'ip_or_hash': t})
+                            continue
+                        else:
+                            i_out = line
                         
                     if i_out:
                         parsed.append({'hostname': h_out, 'ip_or_hash': i_out})
@@ -1216,11 +1241,11 @@ class SeparatorGUI:
             res['combined'].sort(key=lambda x: (x.get('hostname', '').lower(), x.get('ip_or_hash', '')))
             self.last_results = res # Cache for export
             
-            # Populate Trees
-            self.populate_tree(self.tree_common, res['common'])
-            self.populate_tree(self.tree_combined, res['combined'])
-            self.populate_tree(self.tree_unique_a, res['unique_to_a'])
-            self.populate_tree(self.tree_unique_b, res['unique_to_b'])
+            # Populate Texts
+            self.populate_text(self.text_common, res['common'])
+            self.populate_text(self.text_combined, res['combined'])
+            self.populate_text(self.text_unique_a, res['unique_to_a'])
+            self.populate_text(self.text_unique_b, res['unique_to_b'])
             
             # Update tab titles with counts
             self.res_notebook.tab(self.tab_common, text=f"Common ({len(res['common'])})")
@@ -1237,10 +1262,8 @@ class SeparatorGUI:
             # Always update columns to reflect mode change immediately
             mode = "detailed" if self.var_mark_onboarded.get() else "simple"
             
-            # Apply new column structure to all trees
-            trees = [self.tree_common, self.tree_combined, self.tree_unique_a, self.tree_unique_b]
-            for tree in trees:
-                self.configure_tree_columns(tree, mode)
+            # Apply new format to all texts
+            texts = [self.text_common, self.text_combined, self.text_unique_a, self.text_unique_b]
 
             # Trigger re-compare if data exists to populate rows with correct fields
             has_input = self.input_a.get("1.0", tk.END).strip() or self.input_b.get("1.0", tk.END).strip()
@@ -1248,58 +1271,38 @@ class SeparatorGUI:
             if has_input:
                  self.compare_inputs()
             else:
-                 # CRITICAL FIX: If no input, we MUST clear the trees because the columns have changed.
-                 # Existing items (formatted for old columns) would be invalid/invisible.
-                 for tree in trees:
-                     tree.delete(*tree.get_children())
+                 for txt in texts:
+                     txt.delete("1.0", tk.END)
                      
         except Exception as e:
             print(f"Error in refresh_view: {e}")
             messagebox.showerror("Error", f"Failed to refresh view: {e}")
 
-    def configure_tree_columns(self, tree, mode="detailed"):
-        if mode == "detailed":
-            cols = ('hostname', 'ip_or_hash', 'onboarded')
-            tree.configure(columns=cols, show='headings')
-            tree.heading('hostname', text='Hostname')
-            tree.heading('ip_or_hash', text='IP / Hash')
-            tree.heading('onboarded', text='Onboarded?')
-            tree.column('hostname', width=150, stretch=True)
-            tree.column('ip_or_hash', width=150, stretch=True)
-            tree.column('onboarded', width=80, stretch=True)
-        else:
-            cols = ('val',)
-            tree.configure(columns=cols, show='headings')
-            tree.heading('val', text='Item Value')
-            tree.column('val', width=400, stretch=True)
-
-    def populate_tree(self, tree, data_list):
-        tree.delete(*tree.get_children())
+    def populate_text(self, text_widget, data_list):
+        text_widget.delete("1.0", tk.END)
         
         mode = "detailed" if self.var_mark_onboarded.get() else "simple"
         
-        # detailed cols: ('hostname', 'ip_or_hash', 'onboarded')
-        # simple cols: ('val',)
-        target_cols = ('hostname', 'ip_or_hash', 'onboarded') if mode == "detailed" else ('val',)
-        
-        # Only re-configure if columns differ (avoids resizing glitches on re-click)
-        if str(tree['columns']) != str(target_cols):
-             self.configure_tree_columns(tree, mode)
-        
-        for item in data_list:
-            if mode == "detailed":
-                tree.insert('', 'end', values=(
-                    item.get('hostname', ''),
-                    item.get('ip_or_hash', ''),
-                    item.get('onboarded', '-')
-                ))
-            else:
-                # Simple/Old view
+        lines = []
+        if mode == "detailed":
+            lines.append(f"{'Hostname':<30} | {'IP / Hash':<30} | {'Onboarded?':<10}")
+            lines.append("-" * 77)
+            for item in data_list:
+                h = str(item.get('hostname', ''))[:29]
+                i = str(item.get('ip_or_hash', ''))[:29]
+                o = str(item.get('onboarded', '-'))[:9]
+                lines.append(f"{h:<30} | {i:<30} | {o:<10}")
+        else:
+            lines.append(f"{'Item Value':<60}")
+            lines.append("-" * 60)
+            for item in data_list:
                 val = item.get('ip_or_hash', '')
                 h = item.get('hostname', '')
-                if h and h != val: # Only show host if different and present
+                if h and h != val:
                     val = f"{h} | {val}"
-                tree.insert('', 'end', values=(val,))
+                lines.append(str(val))
+                
+        text_widget.insert("1.0", "\n".join(lines))
 
     def update_counts(self):
         # Update labels with simple line counts for now
@@ -1317,21 +1320,21 @@ class SeparatorGUI:
         self.input_a.delete("1.0", tk.END)
         self.input_b.delete("1.0", tk.END)
         self.update_counts()
-        self.tree_common.delete(*self.tree_common.get_children())
-        self.tree_combined.delete(*self.tree_combined.get_children())
-        self.tree_unique_a.delete(*self.tree_unique_a.get_children())
-        self.tree_unique_b.delete(*self.tree_unique_b.get_children())
+        self.text_common.delete("1.0", tk.END)
+        self.text_combined.delete("1.0", tk.END)
+        self.text_unique_a.delete("1.0", tk.END)
+        self.text_unique_b.delete("1.0", tk.END)
         self.res_notebook.tab(self.tab_common, text="Common")
         self.res_notebook.tab(self.tab_combined, text="Combined")
         self.res_notebook.tab(self.tab_unique_a, text="Unique to A")
         self.res_notebook.tab(self.tab_unique_b, text="Unique to B")
 
-    def get_current_tree(self):
+    def get_current_view(self):
         current_tab_index = self.res_notebook.index(self.res_notebook.select())
-        if current_tab_index == 0: return self.tree_common, "common"
-        if current_tab_index == 1: return self.tree_combined, "combined"
-        if current_tab_index == 2: return self.tree_unique_a, "unique_to_a"
-        if current_tab_index == 3: return self.tree_unique_b, "unique_to_b"
+        if current_tab_index == 0: return self.text_common, "common"
+        if current_tab_index == 1: return self.text_combined, "combined"
+        if current_tab_index == 2: return self.text_unique_a, "unique_to_a"
+        if current_tab_index == 3: return self.text_unique_b, "unique_to_b"
         return None, None
 
     def copy_all_result(self):
@@ -1365,8 +1368,8 @@ class SeparatorGUI:
         if not file_path: return
         
         try:
-            tree, name = self.get_current_tree()
-            if not tree: 
+            tree, name = self.get_current_view()
+            if not tree:
                  # Fallback to combined or common?
                  # If no tab selected? Unlikely.
                  name = "combined" 
@@ -1392,7 +1395,7 @@ class SeparatorGUI:
             messagebox.showerror("Error", f"Failed to export: {e}")
 
     def export_json(self):
-        tree, name = self.get_current_tree()
+        tree, name = self.get_current_view()
         if not tree: return
         file_path = filedialog.asksaveasfilename(defaultextension=".json", initialfile=f"{name}_results.json")
         if file_path:
@@ -2072,14 +2075,26 @@ class SeparatorGUI:
         self.ldap_output.delete("1.0", tk.END)
         self.ldap_output.configure(state='disabled')
 
+    def browse_imrk_file(self):
+        f = filedialog.askopenfilename(filetypes=[("Documents", "*.docx *.pdf *.xlsx *.txt"), ("All Files", "*.*")])
+        if f: self.imrk_file_var.set(f)
+
     def create_imrk_tab(self, parent):
         main_frame = ttk.Frame(parent, padding=10)
         main_frame.pack(expand=True, fill='both')
 
         # 1. Input Section
-        ttk.Label(main_frame, text="Raw Text Input:", font=('Arial', 10, 'bold')).pack(anchor='w')
-        self.imrk_input = scrolledtext.ScrolledText(main_frame, height=10)
-        self.imrk_input.pack(fill='both', expand=True, pady=(0, 10))
+        input_frame = ttk.Frame(main_frame)
+        input_frame.pack(fill='x', pady=(0, 5))
+        
+        ttk.Label(input_frame, text="Document File (.docx, .pdf, .xlsx, .txt):").grid(row=0, column=0, padx=5, pady=5, sticky='e')
+        self.imrk_file_var = tk.StringVar()
+        ttk.Entry(input_frame, textvariable=self.imrk_file_var, width=50).grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse", command=self.browse_imrk_file, style='Secondary.TButton').grid(row=0, column=2, padx=5, pady=5)
+
+        ttk.Label(main_frame, text="OR Raw Text Input (Fallback):", font=('Arial', 10, 'bold')).pack(anchor='w')
+        self.imrk_input = scrolledtext.ScrolledText(main_frame, height=8)
+        self.imrk_input.pack(fill='x', expand=False, pady=(0, 10))
 
         # 2. Options Section
         opt_frame = ttk.LabelFrame(main_frame, text="Options", padding=10)
@@ -2110,15 +2125,18 @@ class SeparatorGUI:
         out_btn_frame = ttk.Frame(main_frame)
         out_btn_frame.pack(fill='x')
 
-        ttk.Button(out_btn_frame, text="Copy Output", command=self.copy_imrk_output, style='Secondary.TButton').pack(side='left')
+        ttk.Button(out_btn_frame, text="Copy Output", command=self.copy_imrk_output, style='Secondary.TButton').pack(side='left', padx=(0, 5))
+        ttk.Button(out_btn_frame, text="Export .md", command=self.export_imrk_md, style='Secondary.TButton').pack(side='left')
 
     def convert_imrk_threaded(self):
         t = threading.Thread(target=self.convert_imrk)
         t.start()
 
     def convert_imrk(self):
+        file_path = self.imrk_file_var.get().strip()
         raw_text = self.imrk_input.get("1.0", tk.END).strip()
-        if not raw_text:
+        
+        if not file_path and not raw_text:
             return
 
         self.imrk_output.configure(state='normal')
@@ -2126,9 +2144,27 @@ class SeparatorGUI:
         self.imrk_output.insert("1.0", "Converting...\n")
         self.imrk_output.configure(state='disabled')
 
+        from imrk.ingestor import DocumentIngestor
+        
+        try:
+            if file_path:
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError("File not found")
+                ingested_data = DocumentIngestor.ingest(file_path)
+            else:
+                ingested_data = raw_text
+                
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to ingest file:\n{str(e)}"))
+            self.imrk_output.configure(state='normal')
+            self.imrk_output.delete("1.0", tk.END)
+            self.imrk_output.configure(state='disabled')
+            return
+
         if self.imrk_llm_var.get():
             mode = self.imrk_mode_var.get()
-            enhanced = enhance_with_llm(raw_text, mode)
+            text_for_llm = "\n\n".join([c.text for c in ingested_data]) if isinstance(ingested_data, list) else ingested_data
+            enhanced = enhance_with_llm(text_for_llm, mode)
             if enhanced:
                 self.imrk_output.configure(state='normal')
                 self.imrk_output.delete("1.0", tk.END)
@@ -2137,7 +2173,7 @@ class SeparatorGUI:
                 return
 
         # Fallback / Default
-        chunks = chunk_text(raw_text, method="paragraph")
+        chunks = chunk_text(ingested_data, method="paragraph")
         formatted_chunks = []
         for chunk in chunks:
             ctype = classify_chunk(chunk)
@@ -2152,6 +2188,7 @@ class SeparatorGUI:
         self.imrk_output.configure(state='disabled')
 
     def clear_imrk(self):
+        self.imrk_file_var.set("")
         self.imrk_input.delete("1.0", tk.END)
         self.imrk_output.configure(state='normal')
         self.imrk_output.delete("1.0", tk.END)
@@ -2162,7 +2199,232 @@ class SeparatorGUI:
         if s:
             self.root.clipboard_clear()
             self.root.clipboard_append(s)
+            messagebox.showinfo("Copied", "Markdown output copied to clipboard.")
 
+    def export_imrk_md(self):
+        s = self.imrk_output.get("1.0", tk.END).strip()
+        if not s:
+            return
+        file_path = filedialog.asksaveasfilename(defaultextension=".md", filetypes=[("Markdown files", "*.md"), ("All files", "*.*")])
+        if file_path:
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(s)
+                messagebox.showinfo("Success", f"Exported to {file_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to export:\n{str(e)}")
+
+    def create_multi_drive_tab(self, parent):
+        main_frame = ttk.Frame(parent, padding=10)
+        main_frame.pack(fill='both', expand=True)
+        
+        lbl = ttk.Label(main_frame, text="MultiDrive Audit Engine", font=("Helvetica", 14, "bold"))
+        lbl.pack(pady=(0, 10))
+
+        desc = ttk.Label(main_frame, text="Cross-reference a tracked report against a live tool export (e.g. Cortex XQL) to classify multi-drive pending endpoints.", wraplength=700)
+        desc.pack(pady=(0, 10))
+        
+        form_frame = ttk.Frame(main_frame)
+        form_frame.pack(fill='x', expand=True, pady=10)
+        
+        ttk.Label(form_frame, text="Tracked Report (.xlsx):").grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        self.md_report_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.md_report_var, width=50).grid(row=0, column=1, sticky='we', padx=5, pady=5)
+        ttk.Button(form_frame, text="Browse", command=lambda: self.browse_md_file(self.md_report_var, [("Excel Files", "*.xlsx"), ("All Files", "*.*")])).grid(row=0, column=2, padx=5, pady=5)
+        
+        ttk.Label(form_frame, text="Live TSV/CSV Export:").grid(row=1, column=0, sticky='w', padx=5, pady=5)
+        self.md_tsv_var = tk.StringVar()
+        ttk.Entry(form_frame, textvariable=self.md_tsv_var, width=50).grid(row=1, column=1, sticky='we', padx=5, pady=5)
+        ttk.Button(form_frame, text="Browse", command=lambda: self.browse_md_file(self.md_tsv_var, [("CSV/TSV Files", "*.csv *.tsv"), ("All Files", "*.*")])).grid(row=1, column=2, padx=5, pady=5)
+        
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=20)
+        self.btn_run_md = ttk.Button(btn_frame, text="Run Drive Audit", command=self.run_multi_drive_audit)
+        self.btn_run_md.pack(side='left', padx=5)
+        
+    def browse_md_file(self, var, filetypes):
+        path = filedialog.askopenfilename(filetypes=filetypes)
+        if path:
+            var.set(path)
+            
+    def run_multi_drive_audit(self):
+        report_path = self.md_report_var.get().strip()
+        tsv_path = self.md_tsv_var.get().strip()
+        
+        if not report_path or not tsv_path:
+            messagebox.showwarning("Missing Files", "Please provide both the tracked report and the live TSV export.")
+            return
+            
+        output_path = filedialog.asksaveasfilename(defaultextension=".xlsx", initialfile="Multi_Drive_Status.xlsx", filetypes=[("Excel Files", "*.xlsx")])
+        if not output_path:
+            return
+            
+        self.btn_run_md.config(state='disabled', text="Running...")
+        
+        def task():
+            try:
+                import drive_audit_engine
+                p, r, nf = drive_audit_engine.run(report_path, tsv_path, output_path)
+                self.root.after(0, lambda: messagebox.showinfo("Success", f"Drive Audit Report generated at:\n{output_path}\n\nSummary:\nPending: {p}\nResolved: {r}\nNot Found: {nf}"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to run Drive Audit:\n{str(e)}"))
+            finally:
+                self.root.after(0, lambda: self.btn_run_md.config(state='normal', text="Run Drive Audit"))
+                
+        import threading
+        threading.Thread(target=task, daemon=True).start()
+
+    def create_asset_compliance_tab(self, parent):
+        main_frame = ttk.Frame(parent, padding=10)
+        main_frame.pack(fill='both', expand=True)
+        
+        lbl = ttk.Label(main_frame, text="Asset Compliance Checker", font=("Helvetica", 14, "bold"))
+        lbl.pack(pady=(0, 10))
+
+        desc = ttk.Label(main_frame, text="Select tool exports and corresponding master inventory files to generate the compliance report.", wraplength=700)
+        desc.pack(pady=(0, 10))
+        
+        self.ac_jobs = []
+        jobs_frame = ttk.Frame(main_frame)
+        jobs_frame.pack(fill='x', expand=True, pady=10)
+        
+        default_jobs = [
+            ("Cortex (Servers & VPCs)", "Cortex Servers-VPCs"),
+            ("Cortex (ATMs)", "Cortex ATMs"),
+            ("SIEM", "SIEM"),
+            ("DAM", "DAM")
+        ]
+        
+        # Headers
+        ttk.Label(jobs_frame, text="Job / Tool Category", font=("Helvetica", 10, "bold")).grid(row=0, column=0, sticky='w', padx=5, pady=5)
+        ttk.Label(jobs_frame, text="Tool Export File (.csv/.tsv)", font=("Helvetica", 10, "bold")).grid(row=0, column=1, sticky='w', padx=5, pady=5)
+        ttk.Label(jobs_frame, text="Master Inventory File (.csv/.tsv)", font=("Helvetica", 10, "bold")).grid(row=0, column=2, sticky='w', padx=5, pady=5)
+        
+        for idx, (label_txt, sheet_name) in enumerate(default_jobs, start=1):
+            ttk.Label(jobs_frame, text=label_txt).grid(row=idx, column=0, sticky='w', padx=5, pady=5)
+            
+            tool_var = tk.StringVar()
+            # Wrap entry and button in a subframe
+            tf = ttk.Frame(jobs_frame)
+            tf.grid(row=idx, column=1, sticky='w', padx=5, pady=5)
+            ttk.Entry(tf, textvariable=tool_var, width=40).pack(side='left', padx=(0,5))
+            ttk.Button(tf, text="Browse", width=8, command=lambda v=tool_var: self.browse_ac_file(v)).pack(side='left')
+            
+            inv_var = tk.StringVar()
+            # Wrap entry and button in a subframe
+            inf = ttk.Frame(jobs_frame)
+            inf.grid(row=idx, column=2, sticky='w', padx=5, pady=5)
+            ttk.Entry(inf, textvariable=inv_var, width=40).pack(side='left', padx=(0,5))
+            ttk.Button(inf, text="Browse", width=8, command=lambda v=inv_var: self.browse_ac_file(v)).pack(side='left')
+            
+            self.ac_jobs.append({
+                "label": label_txt,
+                "sheet_name": sheet_name,
+                "tool_var": tool_var,
+                "inv_var": inv_var
+            })
+
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill='x', pady=20)
+        
+        self.btn_run_ac = ttk.Button(btn_frame, text="Generate Compliance Report", command=self.run_asset_compliance)
+        self.btn_run_ac.pack(side='left', padx=5)
+
+    def browse_ac_file(self, string_var):
+        path = filedialog.askopenfilename(filetypes=[("CSV/TSV Files", "*.csv *.tsv"), ("All Files", "*.*")])
+        if path:
+            string_var.set(path)
+
+    def run_asset_compliance(self):
+        output_path = filedialog.asksaveasfilename(defaultextension=".xlsx", initialfile="Asset_Compliance_Report.xlsx", filetypes=[("Excel Files", "*.xlsx")])
+        if not output_path:
+            return
+
+        prepared_jobs = []
+        for job in self.ac_jobs:
+            tool_path = job["tool_var"].get().strip()
+            inv_path = job["inv_var"].get().strip()
+            # Only add jobs that have both files
+            if tool_path and inv_path:
+                prepared_jobs.append({
+                    "label": job["label"],
+                    "sheet_name": job["sheet_name"],
+                    "tool_file": tool_path,
+                    "inventory_file": inv_path
+                })
+        
+        if not prepared_jobs:
+            messagebox.showwarning("Missing Files", "No complete job provided. Please select both a tool export and an inventory file for at least one job.")
+            return
+            
+        self.btn_run_ac.config(state='disabled', text="Generating...")
+        
+        def task():
+            try:
+                import asset_compliance_checker
+                asset_compliance_checker.run_compliance_check(prepared_jobs, output_path)
+                messagebox.showinfo("Success", f"Compliance report generated at:\n{output_path}")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to generate report:\n{str(e)}")
+            finally:
+                self.btn_run_ac.config(state='normal', text="Generate Compliance Report")
+
+        threading.Thread(target=task, daemon=True).start()
+
+    def create_vpm_reviewer_tab(self, parent):
+        container = ttk.Frame(parent)
+        container.pack(fill='both', expand=True, padx=20, pady=20)
+        
+        # Header
+        ttk.Label(container, text="VPM Policy Reviewer", font=('Segoe UI', 14, 'bold')).pack(anchor='w', pady=(0,5))
+        ttk.Label(container, text="Parse, resolve, and analyze Blue Coat / Symantec ProxySG VPM exports to find unused objects, circular references, and overly broad rules.", foreground="#666666").pack(anchor='w', pady=(0,15))
+        
+        # File Frame
+        file_frame = ttk.LabelFrame(container, text="Input Export", padding=10)
+        file_frame.pack(fill='x', pady=5)
+        
+        self.vpm_file_path = tk.StringVar()
+        ttk.Label(file_frame, text="VPM XML/TXT File:").grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Entry(file_frame, textvariable=self.vpm_file_path, width=50).grid(row=0, column=1, padx=5, sticky='ew')
+        ttk.Button(file_frame, text="Browse...", command=lambda: self.vpm_file_path.set(filedialog.askopenfilename(filetypes=[("Text/XML files", "*.txt *.xml"), ("All files", "*.*")]))).grid(row=0, column=2, padx=5)
+        file_frame.columnconfigure(1, weight=1)
+        
+        # Options Frame
+        opt_frame = ttk.LabelFrame(container, text="Options", padding=10)
+        opt_frame.pack(fill='x', pady=5)
+        
+        self.vpm_trunc_limit = tk.IntVar(value=25)
+        ttk.Label(opt_frame, text="Truncate Long Categories at:").grid(row=0, column=0, sticky='w', pady=5)
+        ttk.Entry(opt_frame, textvariable=self.vpm_trunc_limit, width=10).grid(row=0, column=1, padx=5, sticky='w')
+        ttk.Label(opt_frame, text="items (display only, full list in Objects sheet)").grid(row=0, column=2, sticky='w')
+        
+        # Action Frame
+        action_frame = ttk.Frame(container)
+        action_frame.pack(fill='x', pady=15)
+        
+        def run_vpm():
+            if not self.vpm_file_path.get():
+                messagebox.showwarning("Warning", "Please select an input VPM file.")
+                return
+            
+            output_file = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")], initialfile="VPM_Review_Report.xlsx", title="Save VPM Review Report As")
+            if not output_file:
+                return
+                
+            try:
+                import vpm_policy_reviewer
+                vpm_policy_reviewer.run_vpm_review(
+                    self.vpm_file_path.get(), 
+                    output_file, 
+                    truncate_limit=self.vpm_trunc_limit.get()
+                )
+                messagebox.showinfo("Success", f"VPM Review Report generated successfully!\n\nSaved to: {output_file}")
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Error", f"An error occurred while generating the report:\n\n{str(e)}")
+                
+        ttk.Button(action_frame, text="Run VPM Review", command=run_vpm, style='Primary.TButton').pack(side='right')
 
 def main_gui():
     root = tk.Tk()

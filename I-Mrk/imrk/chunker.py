@@ -1,16 +1,26 @@
 import re
-from typing import List
+from typing import List, Optional, Union
+from dataclasses import dataclass
 
-def chunk_text(text: str, method: str = "paragraph") -> List[str]:
-    """Splits raw text into chunks based on the chosen method."""
+@dataclass
+class Chunk:
+    text: str
+    hint: Optional[str] = None
+
+def chunk_text(text_or_chunks: Union[str, List[Chunk]], method: str = "paragraph") -> List[Chunk]:
+    """Splits raw text into chunks or passes through pre-chunked objects."""
+    if isinstance(text_or_chunks, list):
+        return text_or_chunks
+        
+    text = text_or_chunks
     if method == "paragraph":
         # Split by double newline (or more)
-        chunks = re.split(r'\n\s*\n', text.strip())
+        raw_chunks = re.split(r'\n\s*\n', text.strip())
     elif method == "newline":
         # Split by any newline
-        chunks = text.strip().split('\n')
+        raw_chunks = text.strip().split('\n')
     else:
         # Default to paragraph
-        chunks = re.split(r'\n\s*\n', text.strip())
+        raw_chunks = re.split(r'\n\s*\n', text.strip())
     
-    return [c.strip() for c in chunks if c.strip()]
+    return [Chunk(text=c.strip()) for c in raw_chunks if c.strip()]

@@ -2,7 +2,7 @@
 import re
 
 def classify_asset(token: str) -> tuple:
-    """Classify a token based on v1.2.0 rules.
+    r"""Classify a token based on v1.2.0 rules.
     
     Rules:
     - IP: ^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$

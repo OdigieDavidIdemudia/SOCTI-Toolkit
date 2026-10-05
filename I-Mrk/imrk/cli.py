@@ -20,15 +20,22 @@ def mdify(
     llm: bool = typer.Option(False, "--llm", help="Use LLM to enhance formatting")
 ):
     """Converts a raw text file into structured Markdown."""
+    from .ingestor import DocumentIngestor
+    
     input_file = Path(input_path)
     if not input_file.exists():
         console.print(f"[bold red]Error:[/] Input file '{input_path}' not found.")
         raise typer.Exit(code=1)
         
-    raw_text = input_file.read_text(encoding='utf-8')
-    console.print("[bold green]Starting conversion pipeline...[/]")
+    console.print(f"[bold green]Ingesting {input_file.suffix} file...[/]")
+    try:
+        ingested_data = DocumentIngestor.ingest(input_file)
+    except Exception as e:
+        console.print(f"[bold red]Error parsing file:[/] {e}")
+        raise typer.Exit(code=1)
     
     if llm:
+        raw_text = "\n\n".join([c.text for c in ingested_data]) if isinstance(ingested_data, list) else ingested_data
         console.print("[cyan]Applying LLM enrichment (this may take a moment)...[/]")
         enhanced = enhance_with_llm(raw_text, mode)
         if enhanced:
@@ -37,7 +44,7 @@ def mdify(
             return
             
     # Standard rule-based pipeline
-    chunks = chunk_text(raw_text, method="paragraph")
+    chunks = chunk_text(ingested_data, method="paragraph")
     formatted_chunks = []
     
     for chunk in chunks:

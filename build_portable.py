@@ -16,7 +16,13 @@ def build_executable():
         '--noconsole', # No console window
         '--clean',
         '--add-data=assets;assets', # Include assets folder
-        '--add-data=settings.json.example;.' # Include example settings
+        '--add-data=settings.json.example;.', # Include example settings
+        '--paths=I-Mrk', # Include local packages inside I-Mrk directory
+        '--exclude-module=torch',
+        '--exclude-module=tensorflow',
+        '--exclude-module=tensorboard',
+        '--exclude-module=scipy',
+        '--exclude-module=matplotlib'
         # Hidden imports might be needed, but usually PyInstaller finds them.
         # If needed: '--hidden-import=PIL', '--hidden-import=tkinter'
     ]
